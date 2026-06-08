@@ -1,0 +1,106 @@
+name: Build and Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Wear OS APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Decode keystore
+        env:
+          KS: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          python3 -c "
+          import base64, os, sys
+          s = os.environ['KS'].replace(' ','').replace('\n','').replace('\r','')
+          s += '=' * ((4 - len(s) % 4) % 4)
+          try:
+              raw = base64.b64decode(s, validate=True)
+          except Exception as e:
+              print(f'base64 decode failed: {e}', file=sys.stderr)
+              print(f'stripped len={len(s)}, last 20 chars: {s[-20:]}', file=sys.stderr)
+              sys.exit(1)
+          with open(os.environ['RUNNER_TEMP']+'/zerodrop.keystore', 'wb') as f:
+              f.write(raw)
+          print(f'keystore written, {len(raw)} bytes')
+          "
+
+      - name: Sign APK with apksigner
+        env:
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "${ANDROID_SDK_ROOT}" ]; then
+            SDK_PATH="${ANDROID_SDK_ROOT}"
+          elif [ -n "${ANDROID_HOME}" ]; then
+            SDK_PATH="${ANDROID_HOME}"
+          else
+            echo "No Android SDK found — checking Gradle's local one"
+            SDK_PATH="$(find ~/.gradle -path "*/build-tools/36.0.0" -type d 2>/dev/null | head -1)"
+            SDK_PATH="${SDK_PATH%/build-tools/36.0.0}"
+            if [ -z "${SDK_PATH}" ]; then
+              SDK_PATH="${ANDROID_SDK_ROOT}"
+            fi
+          fi
+          echo "Using SDK at: ${SDK_PATH}"
+          APKSIGNER="${SDK_PATH}/build-tools/36.0.0/apksigner"
+          if [ ! -f "${APKSIGNER}" ]; then
+            echo "apksigner not found at ${APKSIGNER}, searching..."
+            APKSIGNER="$(find "${SDK_PATH}" -name apksigner -type f 2>/dev/null | head -1)"
+          fi
+          echo "apksigner: ${APKSIGNER}"
+          "${APKSIGNER}" sign \
+            --ks "${RUNNER_TEMP}/zerodrop.keystore" \
+            --ks-key-alias "${KS_ALIAS}" \
+            --ks-pass "pass:${KS_PASS}" \
+            --key-pass "pass:${KEY_PASS}" \
+            --out app/build/outputs/apk/release/app-release-signed.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Verify signature
+        run: |
+          SDK_PATH="${ANDROID_HOME}"
+          APKSIGNER="${SDK_PATH}/build-tools/36.0.0/apksigner"
+          if [ ! -f "${APKSIGNER}" ]; then
+            APKSIGNER="$(find "${SDK_PATH}" -name apksigner -type f 2>/dev/null | head -1)"
+          fi
+          echo "apksigner: ${APKSIGNER}"
+          "${APKSIGNER}" verify --verbose app/build/outputs/apk/release/app-release-signed.apk
+
+      - name: Rename and prepare release asset
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_ENV"
+          mv app/build/outputs/apk/release/app-release-signed.apk "ZeroDrop-${TAG_NAME}.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ZeroDrop-*.apk
+          generate_release_notes: true

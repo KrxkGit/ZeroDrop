@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shuttlecock shape -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 C58,30 62,34 62,38 C62,42 58,46 54,46 C50,46 46,42 46,38 C46,34 50,30 54,30 Z
+                          M46,38 L38,50 L46,50 Z
+                          M62,38 L70,50 L62,50 Z
+                          M50,46 L48,60 L54,56 L60,60 L58,46 Z
+                          M54,56 L54,78
+                          M50,70 L54,78 L58,70
+                          M47,66 L50,70
+                          M61,66 L58,70"/>
+</vector>
