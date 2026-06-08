@@ -19,44 +19,50 @@ void GameSnapshot::toIntArray(int* out) const {
     out[8] = isGamePoint;
     out[9] = isMatchPoint;
     out[10] = needsSideSwitch;
+    out[11] = sideSwitchedThisSet;
+    out[12] = needsSetEndSwitch;
 }
 
 GameSnapshot GameSnapshot::fromIntArray(const int* in) {
     GameSnapshot snap;
-    snap.leftScore     = in[0];
-    snap.rightScore    = in[1];
-    snap.scoreLimit    = in[2];
-    snap.serveSide     = in[3];
-    snap.currentSet    = in[4];
-    snap.leftSetWins   = in[5];
-    snap.rightSetWins  = in[6];
-    snap.fsmState      = in[7];
-    snap.isGamePoint   = in[8];
-    snap.isMatchPoint  = in[9];
-    snap.needsSideSwitch = in[10];
+    snap.leftScore             = in[0];
+    snap.rightScore            = in[1];
+    snap.scoreLimit            = in[2];
+    snap.serveSide             = in[3];
+    snap.currentSet            = in[4];
+    snap.leftSetWins           = in[5];
+    snap.rightSetWins          = in[6];
+    snap.fsmState              = in[7];
+    snap.isGamePoint           = in[8];
+    snap.isMatchPoint          = in[9];
+    snap.needsSideSwitch       = in[10];
+    snap.sideSwitchedThisSet   = (SNAPSHOT_SIZE > 11) ? in[11] : 0;
+    snap.needsSetEndSwitch     = (SNAPSHOT_SIZE > 12) ? in[12] : 0;
     return snap;
 }
 
 // --- ScoreFsm ---
 
 ScoreFsm::ScoreFsm() : m_state(FsmState::SETUP) {
-    m_snapshot = GameSnapshot{0, 0, 21, 0, 1, 0, 0,
-                              static_cast<int>(FsmState::SETUP), 0, 0, 0};
+    m_snapshot = GameSnapshot{0, 0, 21, 1, 1, 0, 0,
+                              static_cast<int>(FsmState::SETUP), 0, 0, 0, 0, 0};
 }
 
-void ScoreFsm::init(int scoreLimit) {
+void ScoreFsm::init(int scoreLimit, int totalSets) {
     m_history.clear();
     m_state = FsmState::PLAYING;
-    m_snapshot = GameSnapshot{0, 0, scoreLimit, 0, 1, 0, 0,
-                              static_cast<int>(FsmState::PLAYING), 0, 0, 0};
+    m_totalSets = totalSets;
+    m_setsToWin = (totalSets + 1) / 2;
+    m_snapshot = GameSnapshot{0, 0, scoreLimit, 1, 1, 0, 0,
+                              static_cast<int>(FsmState::PLAYING), 0, 0, 0, 0, 0};
 }
 
 void ScoreFsm::reset() {
     int limit = m_snapshot.scoreLimit;
     m_history.clear();
     m_state = FsmState::SETUP;
-    m_snapshot = GameSnapshot{0, 0, limit, 0, 1, 0, 0,
-                              static_cast<int>(FsmState::SETUP), 0, 0, 0};
+    m_snapshot = GameSnapshot{0, 0, limit, 1, 1, 0, 0,
+                              static_cast<int>(FsmState::SETUP), 0, 0, 0, 0, 0};
 }
 
 void ScoreFsm::pushHistory() {
@@ -70,10 +76,12 @@ bool ScoreFsm::scoreLeft() {
     pushHistory();
     m_snapshot.leftScore++;
 
-    // 计算发球权
-    // 羽毛球发球规则：总分偶数为右侧（0），奇数为左侧（若双方分数和为偶数则右发球）
-    int total = m_snapshot.leftScore + m_snapshot.rightScore;
-    m_snapshot.serveSide = (total % 2 == 0) ? 0 : 1;
+    // 计算发球方 + 站位
+    // 己方得分 → 己方发球 (who=0)
+    // 发球方得分为偶数 → 右半区发球，奇数 → 左半区发球
+    // serveSide 编码：[bit1:who(0=self,1=opponent)][bit0:court(0=left,1=right)]
+    int courtL = (m_snapshot.leftScore % 2 == 0) ? 1 : 0;
+    m_snapshot.serveSide = (0 << 1) | courtL;  // self serves, court=0/1
 
     // 局点/赛点检测
     recalculateMeta();
@@ -89,8 +97,9 @@ bool ScoreFsm::scoreRight() {
     pushHistory();
     m_snapshot.rightScore++;
 
-    int total = m_snapshot.leftScore + m_snapshot.rightScore;
-    m_snapshot.serveSide = (total % 2 == 0) ? 0 : 1;
+    // 对方得分 → 对方发球 (who=1)
+    int courtR = (m_snapshot.rightScore % 2 == 0) ? 1 : 0;
+    m_snapshot.serveSide = (1 << 1) | courtR;  // opponent serves, court=0/1
 
     recalculateMeta();
 
@@ -127,14 +136,15 @@ bool ScoreFsm::undo() {
 
 void ScoreFsm::enterEditMode() {
     if (m_state != FsmState::PLAYING) return;
-    pushHistory();
+    // Don't push history here — entering edit mode is not a scoring action.
+    // The actual score change happens when user confirms edit.
     m_state = FsmState::EDITING;
     m_snapshot.fsmState = static_cast<int>(FsmState::EDITING);
 }
 
 bool ScoreFsm::setEditScores(int left, int right, int serveSide) {
     if (m_state != FsmState::EDITING) return false;
-    if (left < 0 || right < 0 || serveSide < 0 || serveSide > 1) return false;
+    if (left < 0 || right < 0 || serveSide < 0 || serveSide > 3) return false;
 
     m_snapshot.leftScore = left;
     m_snapshot.rightScore = right;
@@ -152,9 +162,30 @@ void ScoreFsm::confirmEdit() {
 
 void ScoreFsm::confirmSideSwitch() {
     if (m_state != FsmState::SIDE_SWITCH) return;
+
+    bool wasMidSetSwitch = (m_snapshot.needsSideSwitch != 0);
+    bool wasSetEndSwitch = (m_snapshot.needsSetEndSwitch != 0);
+
     m_state = FsmState::PLAYING;
     m_snapshot.fsmState = static_cast<int>(FsmState::PLAYING);
     m_snapshot.needsSideSwitch = 0;
+    m_snapshot.needsSetEndSwitch = 0;
+    m_snapshot.sideSwitchedThisSet = 1;
+
+    if (wasSetEndSwitch) {
+        // End-of-set switch: advance to next set now
+        m_snapshot.currentSet++;
+        if (m_snapshot.currentSet > m_totalSets) {
+            m_state = FsmState::FINISHED;
+            m_snapshot.fsmState = static_cast<int>(FsmState::FINISHED);
+            return;
+        }
+        m_snapshot.leftScore = 0;
+        m_snapshot.rightScore = 0;
+        m_snapshot.serveSide = 1;  // self serves, right court
+        m_snapshot.sideSwitchedThisSet = 0;
+        recalculateMeta();
+    }
 }
 
 void ScoreFsm::getStateIntArray(int* out) const {
@@ -167,9 +198,9 @@ void ScoreFsm::restoreFromIntArray(const int* in) {
 }
 
 std::string ScoreFsm::serialize() const {
-    // 格式: "scoreLimit,historySize:l0,r0,sv0,set0,lw0,rw0,...;l1,r1,..."
+    // 格式: "scoreLimit,totalSets,historySize:..."
     std::ostringstream oss;
-    oss << m_snapshot.scoreLimit << "," << m_history.size() << ";";
+    oss << m_snapshot.scoreLimit << "," << m_totalSets << "," << m_history.size() << ";";
 
     // 当前快照
     oss << m_snapshot.leftScore << "," << m_snapshot.rightScore << ","
@@ -177,7 +208,8 @@ std::string ScoreFsm::serialize() const {
         << m_snapshot.leftSetWins << "," << m_snapshot.rightSetWins << ","
         << m_snapshot.fsmState << ","
         << m_snapshot.isGamePoint << "," << m_snapshot.isMatchPoint << ","
-        << m_snapshot.needsSideSwitch;
+        << m_snapshot.needsSideSwitch << ","
+        << m_snapshot.sideSwitchedThisSet;
 
     // 历史栈
     for (const auto& snap : m_history) {
@@ -187,7 +219,8 @@ std::string ScoreFsm::serialize() const {
             << snap.leftSetWins << "," << snap.rightSetWins << ","
             << snap.fsmState << ","
             << snap.isGamePoint << "," << snap.isMatchPoint << ","
-            << snap.needsSideSwitch;
+            << snap.needsSideSwitch << ","
+            << snap.sideSwitchedThisSet;
     }
 
     return oss.str();
@@ -199,23 +232,37 @@ bool ScoreFsm::deserialize(const std::string& data) {
         std::string header;
         std::getline(iss, header, ';');
 
-        // Parse header
+        // Parse header: "scoreLimit,totalSets,historySize"
         auto comma1 = header.find(',');
         if (comma1 == std::string::npos) return false;
         int limit = std::stoi(header.substr(0, comma1));
-        size_t historySize = std::stoul(header.substr(comma1 + 1));
+        auto comma2 = header.find(',', comma1 + 1);
+        int totalSets = 3;
+        size_t historySize = 0;
+        if (comma2 != std::string::npos) {
+            // New format: scoreLimit,totalSets,historySize
+            totalSets = std::stoi(header.substr(comma1 + 1, comma2 - comma1 - 1));
+            historySize = std::stoul(header.substr(comma2 + 1));
+        } else {
+            // Old format: scoreLimit,historySize
+            historySize = std::stoul(header.substr(comma1 + 1));
+        }
+        m_totalSets = totalSets;
+        m_setsToWin = (totalSets + 1) / 2;
 
-        // Parse current snapshot
+        // Parse current snapshot (backwards-compat with old 11-field saves)
         std::string snapStr;
         std::getline(iss, snapStr, ':');
         std::istringstream snapStream(snapStr);
-        int vals[11];
-        for (int i = 0; i < 10; ++i) {
+        int vals[12] = {0};
+        int fieldCount = 0;
+        for (int i = 0; i < 12; ++i) {
             std::string token;
-            std::getline(snapStream, token, ',');
+            if (!std::getline(snapStream, token, ',')) break;
             vals[i] = std::stoi(token);
+            fieldCount++;
         }
-        vals[10] = 0; // default needsSideSwitch
+        int sideSwitchedVal = (fieldCount >= 12) ? vals[11] : 0;
 
         m_snapshot = GameSnapshot{
             vals[0], vals[1], limit,
@@ -223,7 +270,7 @@ bool ScoreFsm::deserialize(const std::string& data) {
             vals[4], vals[5],
             vals[6],
             vals[7], vals[8],
-            vals[9]
+            vals[10], sideSwitchedVal
         };
         m_state = static_cast<FsmState>(m_snapshot.fsmState);
 
@@ -233,19 +280,22 @@ bool ScoreFsm::deserialize(const std::string& data) {
         std::string histItem;
         while (std::getline(iss, histItem, ':')) {
             std::istringstream histStream(histItem);
-            int hvals[10];
-            for (int i = 0; i < 10; ++i) {
+            int hvals[12] = {0};
+            int hfieldCount = 0;
+            for (int i = 0; i < 12; ++i) {
                 std::string token;
-                std::getline(histStream, token, ',');
+                if (!std::getline(histStream, token, ',')) break;
                 hvals[i] = std::stoi(token);
+                hfieldCount++;
             }
+            int hSwitchVal = (hfieldCount >= 12) ? hvals[11] : 0;
             m_history.push_back(GameSnapshot{
                 hvals[0], hvals[1], limit,
                 hvals[2], hvals[3],
                 hvals[4], hvals[5],
                 hvals[6],
                 hvals[7], hvals[8],
-                hvals[9]
+                hvals[10], hSwitchVal
             });
         }
 
@@ -264,8 +314,9 @@ void ScoreFsm::recalculateMeta() {
     m_snapshot.isMatchPoint = isMatchPoint(limit, left, right,
                                            m_snapshot.leftSetWins,
                                            m_snapshot.rightSetWins,
-                                           SETS_TO_WIN) ? 1 : 0;
-    m_snapshot.needsSideSwitch = shouldSwitchSides(limit, left, right) ? 1 : 0;
+                                           m_setsToWin) ? 1 : 0;
+    m_snapshot.needsSideSwitch = shouldSwitchSides(limit, left, right, m_snapshot.currentSet, m_totalSets, m_snapshot.sideSwitchedThisSet != 0) ? 1 : 0;
+    m_snapshot.needsSetEndSwitch = shouldSwitchAfterSet(m_snapshot.currentSet, m_totalSets) ? 1 : 0;
 }
 
 bool ScoreFsm::isSetOver() const {
@@ -299,34 +350,34 @@ void ScoreFsm::checkSetEnd() {
         m_snapshot.rightSetWins++;
     }
 
-    // 检查是否赢得比赛 (三局两胜)
-    if (m_snapshot.leftSetWins >= SETS_TO_WIN ||
-        m_snapshot.rightSetWins >= SETS_TO_WIN) {
+    // 检查是否赢得比赛
+    if (m_snapshot.leftSetWins >= m_setsToWin ||
+        m_snapshot.rightSetWins >= m_setsToWin) {
         m_state = FsmState::FINISHED;
         m_snapshot.fsmState = static_cast<int>(FsmState::FINISHED);
         return;
     }
 
-    // 开始新一局
-    m_snapshot.currentSet++;
-    m_snapshot.leftScore = 0;
-    m_snapshot.rightScore = 0;
-    m_snapshot.serveSide = 0;
-    recalculateMeta();
+    // Set over, match not over → side switch after every set (BWF rule)
+    m_snapshot.needsSetEndSwitch = 1;
+    m_state = FsmState::SIDE_SWITCH;
+    m_snapshot.fsmState = static_cast<int>(FsmState::SIDE_SWITCH);
 }
 
-bool ScoreFsm::shouldSwitchSides(int scoreLimit, int left, int right) {
-    // 决胜局（第三局）中任意一方达到 11 分时换边
+bool ScoreFsm::shouldSwitchSides(int scoreLimit, int left, int right,
+                                  int currentSet, int totalSets, bool alreadySwitched) {
+    // Never switch in a single-set match
+    if (totalSets <= 1) return false;
+    // Only switch in the deciding set:
+    //   best-of-3 → only set 3 (currentSet == 3)
+    //   best-of-5 → only set 5, etc.
+    if (currentSet < totalSets) return false;
+    if (alreadySwitched) return false;
+
     int total = left + right;
     if (total == 0) return false;
 
-    // 简化逻辑：在决胜局中，当总分达到 scoreLimit/2 时换边
-    // 标准规则：第三局 11 分换边（对于 21 分制）
-    // 这里用通用的方式：当任何一方达到 (limit/2 向上取整) 时触发换边
-    // 仅在 set 3（决胜局）触发
-    // 实际通过 currentSet 判断：在 recalculateMeta 中需要更多上下文
-    // 对外暴露一个简单的检测函数，由上层传入 set 信息
-    int halfLimit = (scoreLimit + 1) / 2;
+    int halfLimit = (scoreLimit + 1) / 2; // e.g. 8 for 15-pt, 11 for 21-pt
     return (left >= halfLimit || right >= halfLimit);
 }
 
@@ -341,6 +392,11 @@ bool ScoreFsm::isMatchPoint(int scoreLimit, int left, int right,
     if (leftSetWins >= setsToWin - 1 && left >= scoreLimit - 1) return true;
     if (rightSetWins >= setsToWin - 1 && right >= scoreLimit - 1) return true;
     return false;
+}
+
+bool ScoreFsm::shouldSwitchAfterSet(int currentSet, int totalSets) {
+    // Side switch after every set EXCEPT the final one
+    return (totalSets > 1 && currentSet < totalSets);
 }
 
 } // namespace zerodrop

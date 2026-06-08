@@ -20,12 +20,14 @@ class MainActivity : ComponentActivity() {
             ZeroDropTheme {
                 var screen by remember { mutableStateOf<Screen>(Screen.Setup) }
                 var scoreLimit by remember { mutableIntStateOf(21) }
+                var totalSets by remember { mutableIntStateOf(3) }
 
                 when (screen) {
                     Screen.Setup -> {
                         SetupScreen(
-                            onStartMatch = { limit ->
+                            onStartMatch = { limit, sets ->
                                 scoreLimit = limit
+                                totalSets = sets
                                 screen = Screen.Scoring
                             }
                         )
@@ -37,7 +39,7 @@ class MainActivity : ComponentActivity() {
 
                         // Start the match with configured limit on first composition
                         LaunchedEffect(Unit) {
-                            viewModel.startMatch(scoreLimit)
+                            viewModel.startMatch(scoreLimit, totalSets)
                         }
 
                         ScoringScreen(

@@ -33,9 +33,9 @@ Java_com_zerodrop_app_ScoreBridge_nativeDestroy(JNIEnv* env, jobject thiz) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_zerodrop_app_ScoreBridge_nativeSetup(JNIEnv* env, jobject thiz, jint scoreLimit) {
+Java_com_zerodrop_app_ScoreBridge_nativeSetup(JNIEnv* env, jobject thiz, jint scoreLimit, jint totalSets) {
     auto* fsm = getFsm(env, thiz);
-    fsm->init(static_cast<int>(scoreLimit));
+    fsm->init(static_cast<int>(scoreLimit), static_cast<int>(totalSets));
 }
 
 JNIEXPORT jboolean JNICALL

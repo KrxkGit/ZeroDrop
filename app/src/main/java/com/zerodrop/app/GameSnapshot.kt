@@ -1,7 +1,7 @@
 package com.zerodrop.app
 
 /**
- * Snapshots mirror the C++ GameSnapshot::SNAPSHOT_SIZE (= 11) layout.
+ * Snapshots mirror the C++ GameSnapshot::SNAPSHOT_SIZE (= 13) layout.
  */
 data class GameSnapshot(
     val leftScore: Int,
@@ -14,16 +14,20 @@ data class GameSnapshot(
     val fsmState: Int,
     val isGamePoint: Int,
     val isMatchPoint: Int,
-    val needsSideSwitch: Int
+    val needsSideSwitch: Int,
+    val sideSwitchedThisSet: Int,
+    val needsSetEndSwitch: Int
 ) {
     companion object {
-        const val SNAPSHOT_SIZE = 11
+        const val SNAPSHOT_SIZE = 13
 
         fun fromIntArray(arr: IntArray): GameSnapshot {
-            require(arr.size >= SNAPSHOT_SIZE)
+            require(arr.size >= 11)
             return GameSnapshot(
                 arr[0], arr[1], arr[2], arr[3], arr[4],
-                arr[5], arr[6], arr[7], arr[8], arr[9], arr[10]
+                arr[5], arr[6], arr[7], arr[8], arr[9], arr[10],
+                if (arr.size > 11) arr[11] else 0,
+                if (arr.size > 12) arr[12] else 0
             )
         }
     }

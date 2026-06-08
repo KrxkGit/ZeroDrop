@@ -25,7 +25,7 @@ data class GameUiState(
     val leftScore: Int = 0,
     val rightScore: Int = 0,
     val scoreLimit: Int = 21,
-    val serveSide: Int = 0,       // 0=Left, 1=Right
+    val serveSide: Int = 0,       // 发球信息 [bit1:who(0=self,1=opponent)][bit0:court(0=left,1=right)]
     val currentSet: Int = 1,
     val leftSetWins: Int = 0,
     val rightSetWins: Int = 0,
@@ -33,6 +33,7 @@ data class GameUiState(
     val isGamePoint: Boolean = false,
     val isMatchPoint: Boolean = false,
     val needsSideSwitch: Boolean = false,
+    val needsSetEndSwitch: Boolean = false,
     val canUndo: Boolean = false,
     val isEditMode: Boolean = false
 )
@@ -55,8 +56,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---- Public actions ----
 
-    fun startMatch(scoreLimit: Int) {
-        fsm.setup(scoreLimit)
+    fun startMatch(scoreLimit: Int, totalSets: Int = 3) {
+        fsm.setup(scoreLimit, totalSets)
         refreshState()
         persistState()
     }
@@ -113,6 +114,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun confirmSideSwitch() {
         fsm.confirmSideSwitch()
+        vibrationManager.feedbackCriticalPoint()
         refreshState()
         persistState()
     }
@@ -136,6 +138,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 isGamePoint = snap.isGamePoint != 0,
                 isMatchPoint = snap.isMatchPoint != 0,
                 needsSideSwitch = snap.needsSideSwitch != 0,
+                needsSetEndSwitch = snap.needsSetEndSwitch != 0,
                 canUndo = canUndo,
                 isEditMode = FsmState.fromCode(snap.fsmState) == FsmState.EDITING
             )

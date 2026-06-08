@@ -3,10 +3,11 @@ package com.zerodrop.app
 /**
  * JNI bridge to the C++ ScoreFsm.
  *
- * The native layer returns state via IntArray snapshots with 11 elements:
+ * The native layer returns state via IntArray snapshots with 13 elements:
  *   [0] leftScore     [1] rightScore    [2] scoreLimit    [3] serveSide
  *   [4] currentSet    [5] leftSetWins   [6] rightSetWins  [7] fsmState
- *   [8] isGamePoint   [9] isMatchPoint  [10] needsSideSwitch
+ *   [8] isGamePoint   [9] isMatchPoint  [10] needsSideSwitch [11] sideSwitchedThisSet
+ *   [12] needsSetEndSwitch
  */
 class ScoreBridge {
 
@@ -17,7 +18,7 @@ class ScoreBridge {
         nativePtr = nativeInit()
     }
 
-    fun setup(scoreLimit: Int) = nativeSetup(scoreLimit)
+    fun setup(scoreLimit: Int, totalSets: Int = 3) = nativeSetup(scoreLimit, totalSets)
 
     fun scoreLeft(): Boolean = nativeScoreLeft()
     fun scoreRight(): Boolean = nativeScoreRight()
@@ -57,7 +58,7 @@ class ScoreBridge {
     // Native methods
     private external fun nativeInit(): Long
     private external fun nativeDestroy()
-    private external fun nativeSetup(scoreLimit: Int)
+    private external fun nativeSetup(scoreLimit: Int, totalSets: Int)
     private external fun nativeScoreLeft(): Boolean
     private external fun nativeScoreRight(): Boolean
     private external fun nativeUndo(): Boolean
