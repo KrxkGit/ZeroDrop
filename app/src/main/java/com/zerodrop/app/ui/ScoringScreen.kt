@@ -1,7 +1,9 @@
 package com.zerodrop.app.ui
 
-import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -31,7 +33,15 @@ import com.zerodrop.app.ui.theme.*
  *  - Tap bottom half   → opponent +1
  *  - Long press (1.5s) → enter edit mode
  *
- * Undo is available inside edit mode as a button.
+ * ── Ambient mode (PRD §4.3) ──
+ * When in ambient (微光) mode:
+ *  - Background stays pure black
+ *  - Score colors: white → dimmed gray
+ *  - Serve dot: solid fill → hollow ring (outline only)
+ *  - Serve indicator bar: hidden entirely
+ *  - Set wins text: dimmed
+ *  - Animations: disabled (no AnimatedVisibility)
+ *  - Tap/long-press gestures: still active (wrist-up → exit ambient → tap registers)
  */
 @Composable
 fun ScoringScreen(
@@ -43,7 +53,10 @@ fun ScoringScreen(
     )
 ) {
     val state by viewModel.uiState.collectAsState()
-    val canScore = state.fsmState == FsmState.PLAYING
+    val ambient = LocalAmbientState.current
+    val isAmbient = ambient.isAmbient
+
+    val canScore = state.fsmState == FsmState.PLAYING && !isAmbient
     val isSideSwitch = state.fsmState == FsmState.SIDE_SWITCH
 
     val whoServes = state.serveSide shr 1
@@ -61,11 +74,25 @@ fun ScoringScreen(
     val dotPhSz      = (16 * scale).dp
     val barH         = (3 * scale).dp
 
+    // ── Ambient-aware colors ──
+    val scoreColorActive = when {
+        state.isMatchPoint -> SCORE_CRITICAL
+        state.isGamePoint -> SCORE_WARNING
+        else -> SCORE_WHITE
+    }
+    val scoreColor = if (isAmbient) AMBIENT_SCORE else scoreColorActive
+    val setTextColor = if (isAmbient) AMBIENT_DIM else SCORE_DIM
+    val serveBgColor = if (isAmbient) Color.Transparent else OLED_BLACK
+    val serveLeftFill = if (isAmbient) Color.Transparent else SERVE_LEFT
+    val serveRightFill = if (isAmbient) Color.Transparent else SERVE_RIGHT
+    val serveLeftBorder = if (isAmbient) AMBIENT_SERVE_LEFT else Color.Transparent
+    val serveRightBorder = if (isAmbient) AMBIENT_SERVE_RIGHT else Color.Transparent
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(OLED_BLACK)
-            // Tap + long-press only — no swipe gesture
+            .background(serveBgColor)
+            // Tap + long-press — only active when not in ambient
             .pointerInput(canScore) {
                 detectTapGestures(
                     onTap = { offset ->
@@ -92,43 +119,60 @@ fun ScoringScreen(
                     append("Set ${state.currentSet}")
                     if (whoServes == 0) append(" · 己方发球") else append(" · 对方发球")
                 },
-                color = SCORE_DIM,
+                color = setTextColor,
                 fontSize = setFontSz,
                 modifier = Modifier.padding(bottom = 2.dp)
             )
 
-            ScoreDisplay(
+            ScoreDisplayAmbient(
                 score = state.leftScore,
-                color = when {
-                    state.isMatchPoint -> SCORE_CRITICAL
-                    state.isGamePoint -> SCORE_WARNING
-                    else -> SCORE_WHITE
-                },
+                color = scoreColor,
                 isServing = whoServes == 0,
-                serveColor = if (servesRight) SERVE_RIGHT else SERVE_LEFT,
-                modifier = Modifier.weight(1f),
-                scoreFontSize = scoreFontSz, dotSize = dotSz,
-                dotGap = dotGapSz, dotPlaceholder = dotPhSz
-            )
-
-            ServeIndicator(
-                isSelfServing = whoServes == 0,
+                isAmbient = isAmbient,
+                serveLeftFill = serveLeftFill,
+                serveRightFill = serveRightFill,
+                serveLeftBorder = serveLeftBorder,
+                serveRightBorder = serveRightBorder,
                 servesRight = servesRight,
-                modifier = Modifier.fillMaxWidth().height(barH)
+                modifier = Modifier.weight(1f),
+                scoreFontSize = scoreFontSz,
+                dotSize = dotSz,
+                dotGap = dotGapSz,
+                dotPlaceholder = dotPhSz
             )
 
-            ScoreDisplay(
+            // In ambient mode, hide the solid serve bar entirely
+            if (!isAmbient) {
+                ServeIndicator(
+                    isSelfServing = whoServes == 0,
+                    servesRight = servesRight,
+                    modifier = Modifier.fillMaxWidth().height(barH)
+                )
+            } else {
+                // Ambient: thin dim line separator instead
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(AMBIENT_DIM)
+                )
+            }
+
+            ScoreDisplayAmbient(
                 score = state.rightScore,
-                color = when {
-                    state.isMatchPoint -> SCORE_CRITICAL
-                    state.isGamePoint -> SCORE_WARNING
-                    else -> SCORE_WHITE
-                },
+                color = scoreColor,
                 isServing = whoServes == 1,
-                serveColor = if (servesRight) SERVE_RIGHT else SERVE_LEFT,
+                isAmbient = isAmbient,
+                serveLeftFill = serveLeftFill,
+                serveRightFill = serveRightFill,
+                serveLeftBorder = serveLeftBorder,
+                serveRightBorder = serveRightBorder,
+                servesRight = servesRight,
                 modifier = Modifier.weight(1f),
-                scoreFontSize = scoreFontSz, dotSize = dotSz,
-                dotGap = dotGapSz, dotPlaceholder = dotPhSz
+                scoreFontSize = scoreFontSz,
+                dotSize = dotSz,
+                dotGap = dotGapSz,
+                dotPlaceholder = dotPhSz
             )
         }
 
@@ -141,21 +185,21 @@ fun ScoringScreen(
         ) {
             Text(
                 text = "${state.leftSetWins}",
-                color = if (state.leftSetWins > state.rightSetWins) SERVE_LEFT else SCORE_DIM,
+                color = if (!isAmbient && state.leftSetWins > state.rightSetWins) SERVE_LEFT else setTextColor,
                 fontSize = winsFontSz, fontWeight = FontWeight.Bold
             )
-            Text(text = "-", color = SCORE_DIM, fontSize = winsFontSz)
+            Text(text = "-", color = setTextColor, fontSize = winsFontSz)
             Text(
                 text = "${state.rightSetWins}",
-                color = if (state.rightSetWins > state.leftSetWins) SERVE_RIGHT else SCORE_DIM,
+                color = if (!isAmbient && state.rightSetWins > state.leftSetWins) SERVE_RIGHT else setTextColor,
                 fontSize = winsFontSz, fontWeight = FontWeight.Bold
             )
         }
     }
 
-    // ---- Overlays ----
+    // ---- Overlays (only shown when NOT in ambient) ----
 
-    if (state.isEditMode) {
+    if (!isAmbient && state.isEditMode) {
         EditModeOverlay(
             leftScore = state.leftScore,
             rightScore = state.rightScore,
@@ -168,9 +212,7 @@ fun ScoringScreen(
         )
     }
 
-    if (isSideSwitch) {
-        // Mid-set side switch: needsSideSwitch=true
-        // Set-end side switch: needsSetEndSwitch=true
+    if (!isAmbient && isSideSwitch) {
         val isSetEnd = state.needsSetEndSwitch
         SideSwitchDialog(
             afterSet = isSetEnd,
@@ -179,7 +221,7 @@ fun ScoringScreen(
         )
     }
 
-    if (state.fsmState == FsmState.FINISHED) {
+    if (!isAmbient && state.fsmState == FsmState.FINISHED) {
         MatchFinishedDialog(
             leftSetWins = state.leftSetWins,
             rightSetWins = state.rightSetWins,
@@ -188,11 +230,25 @@ fun ScoringScreen(
     }
 }
 
-// ─── Composables ────────────────────────────────────────────────
+// ─── Ambient-aware ScoreDisplay composable ──────────────────────
 
+/**
+ * Score display box for one side. In ambient mode:
+ *  - Score text uses dimmed gray instead of bright white
+ *  - Serve dot becomes a hollow ring (outline only) instead of solid fill
+ *  - Critical/game-point colors desaturate in ambient
+ */
 @Composable
-private fun ScoreDisplay(
-    score: Int, color: Color, isServing: Boolean, serveColor: Color,
+private fun ScoreDisplayAmbient(
+    score: Int,
+    color: Color,
+    isServing: Boolean,
+    isAmbient: Boolean,
+    serveLeftFill: Color,
+    serveRightFill: Color,
+    serveLeftBorder: Color,
+    serveRightBorder: Color,
+    servesRight: Boolean,
     modifier: Modifier = Modifier,
     scoreFontSize: androidx.compose.ui.unit.TextUnit,
     dotSize: androidx.compose.ui.unit.Dp,
@@ -205,7 +261,24 @@ private fun ScoreDisplay(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (isServing) {
-                Box(Modifier.size(dotSize).background(color = serveColor, shape = CircleShape))
+                if (isAmbient) {
+                    // ── Ambient: hollow outline ring instead of solid dot ──
+                    Box(
+                        modifier = Modifier
+                            .size(dotSize + 2.dp)
+                            .border(1.5.dp, if (servesRight) serveRightBorder else serveLeftBorder, CircleShape)
+                    )
+                } else {
+                    // ── Interactive: solid colored dot ──
+                    Box(
+                        Modifier
+                            .size(dotSize)
+                            .background(
+                                color = if (servesRight) serveRightFill else serveLeftFill,
+                                shape = CircleShape
+                            )
+                    )
+                }
                 Spacer(Modifier.height(dotGap))
             } else {
                 Spacer(Modifier.height(dotPlaceholder))
@@ -217,6 +290,8 @@ private fun ScoreDisplay(
         }
     }
 }
+
+// ─── Reused composables ─────────────────────────────────────────
 
 @Composable
 private fun ServeIndicator(isSelfServing: Boolean, servesRight: Boolean, modifier: Modifier = Modifier) {

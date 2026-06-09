@@ -2,6 +2,7 @@ package com.zerodrop.app
 
 import android.app.Application
 import android.content.Context
+import android.os.PowerManager
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -43,6 +44,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val fsm = ScoreBridge()
     private val vibrationManager = VibrationManager(application)
     private val context = application
+    private val ongoingActivity = OngoingActivityManager(application)
+
+    // ── WakeLock for match-in-progress screen-on ──
+    // Held while the FSM is PLAYING to prevent the screen from sleeping.
+    // Released when paused (EDITING), switching sides, or finished.
+    private val wakeLock: PowerManager.WakeLock by lazy {
+        val pm = application.getSystemService(Context.POWER_SERVICE) as PowerManager
+        @Suppress("DEPRECATION")
+        pm.newWakeLock(
+            PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
+            "ZeroDrop:matchWakeLock"
+        )
+    }
 
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
@@ -60,6 +74,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         fsm.setup(scoreLimit, totalSets)
         refreshState()
         persistState()
+        onMatchStateChanged()
     }
 
     fun scoreLeft() {
@@ -71,6 +86,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 vibrationManager.feedbackCriticalPoint()
             }
             persistState()
+            onMatchStateChanged()
         }
     }
 
@@ -83,6 +99,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 vibrationManager.feedbackCriticalPoint()
             }
             persistState()
+            onMatchStateChanged()
         }
     }
 
@@ -92,6 +109,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             vibrationManager.feedbackUndo()
             refreshState()
             persistState()
+            onMatchStateChanged()
         }
     }
 
@@ -99,6 +117,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         fsm.enterEditMode()
         vibrationManager.feedbackEditMode()
         refreshState()
+        onMatchStateChanged()
     }
 
     fun setEditScores(left: Int, right: Int, serveSide: Int) {
@@ -110,6 +129,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         fsm.confirmEdit()
         refreshState()
         persistState()
+        onMatchStateChanged()
     }
 
     fun confirmSideSwitch() {
@@ -117,6 +137,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         vibrationManager.feedbackCriticalPoint()
         refreshState()
         persistState()
+        onMatchStateChanged()
+    }
+
+    /**
+     * Called when the user exits the Scoring screen (new match, back to setup).
+     * Releases all active system resources: WakeLock, Ongoing Activity.
+     */
+    fun onMatchEnded() {
+        releaseWakeLock()
+        ongoingActivity.stopMatch()
     }
 
     // ---- Internal ----
@@ -146,6 +176,45 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         return snap
     }
 
+    /**
+     * React to FSM state transitions:
+     *  - PLAYING → acquire WakeLock, start/update Ongoing Activity
+     *  - SIDE_SWITCH / EDITING → release WakeLock (screen can dim), keep Ongoing Activity
+     *  - FINISHED → release everything
+     */
+    private fun onMatchStateChanged() {
+        val state = _uiState.value
+        when (state.fsmState) {
+            FsmState.PLAYING -> {
+                acquireWakeLock()
+                ongoingActivity.updateMatchStatus(state.leftScore, state.rightScore, state.currentSet)
+            }
+            FsmState.SIDE_SWITCH, FsmState.EDITING -> {
+                releaseWakeLock() // Allow screen to dim during pause
+                ongoingActivity.updateMatchStatus(state.leftScore, state.rightScore, state.currentSet)
+            }
+            FsmState.FINISHED -> {
+                releaseWakeLock()
+                ongoingActivity.stopMatch()
+            }
+            FsmState.SETUP -> {
+                // Match hasn't started yet — no action
+            }
+        }
+    }
+
+    private fun acquireWakeLock() {
+        if (!wakeLock.isHeld) {
+            wakeLock.acquire(10 * 60 * 1000L) // 10 min timeout, refreshed each score
+        }
+    }
+
+    private fun releaseWakeLock() {
+        if (wakeLock.isHeld) {
+            wakeLock.release()
+        }
+    }
+
     private fun persistState() {
         viewModelScope.launch {
             val data = fsm.serialize()
@@ -168,6 +237,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         // Persist one last time before VM dies
         persistState()
+        releaseWakeLock()
+        ongoingActivity.stopMatch()
         fsm.dispose()
         super.onCleared()
     }

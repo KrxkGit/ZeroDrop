@@ -82,6 +82,7 @@ dependencies {
     // Wear OS
     implementation("androidx.wear:wear:1.4.0")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
+    implementation("androidx.wear:wear-ongoing:1.1.0")
 
     // Compose BOM
     implementation(platform("androidx.compose:compose-bom:2026.05.01"))

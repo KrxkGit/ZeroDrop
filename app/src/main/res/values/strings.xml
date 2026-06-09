@@ -11,4 +11,10 @@
     <string name="game_point">局点</string>
     <string name="match_over">比赛结束</string>
     <string name="undo">撤销</string>
+
+    <!-- Ongoing Activity notification channel -->
+    <string name="ongoing_channel_name">比赛进行中</string>
+    <string name="ongoing_channel_description">比赛计分进行中的持续通知</string>
+    <string name="ongoing_notification_title">比赛记录中</string>
+    <string name="ongoing_notification_text">ZeroDrop 正在记录比分，防误杀</string>
 </resources>

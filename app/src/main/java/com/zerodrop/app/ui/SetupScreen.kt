@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -20,6 +21,9 @@ import com.zerodrop.app.ui.theme.*
  *  - Game mode: single set (1局) or best-of-3 (3局2胜)
  *  - Score limit: 11, 15, or 21
  *  - Start button
+ *
+ * In ambient mode: dim all interactive elements, they're still tappable
+ * but visually subdued.
  */
 @Composable
 fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int) -> Unit) {
@@ -27,6 +31,10 @@ fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int) -> Unit) {
     var selectedLimit by remember { mutableIntStateOf(21) }
     var selectedMode by remember { mutableIntStateOf(3) } // 3 = best-of-3, 1 = single set
     val scrollState = rememberScrollState()
+    val ambient = LocalAmbientState.current
+
+    val textColor = if (ambient.isAmbient) AMBIENT_SCORE else SCORE_WHITE
+    val dimColor = if (ambient.isAmbient) AMBIENT_DIM else SCORE_DIM
 
     Box(
         modifier = Modifier
@@ -46,7 +54,7 @@ fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int) -> Unit) {
 
             Text(
                 text = "ZeroDrop",
-                color = SCORE_WHITE,
+                color = textColor,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -54,7 +62,7 @@ fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int) -> Unit) {
             // ---- Game mode selector ----
             Text(
                 text = "比赛模式",
-                color = SCORE_DIM,
+                color = dimColor,
                 fontSize = 11.sp
             )
 
@@ -68,15 +76,18 @@ fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int) -> Unit) {
                             .width(68.dp)
                             .height(34.dp)
                             .background(
-                                color = if (isSelected) SERVE_RIGHT else SCORE_DIM.copy(alpha = 0.15f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                color = if (isSelected)
+                                    SERVE_RIGHT
+                                else
+                                    dimColor.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(8.dp)
                             )
                             .clickable { selectedMode = mode },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = label,
-                            color = if (isSelected) SCORE_WHITE else SCORE_DIM,
+                            color = if (isSelected) SCORE_WHITE else dimColor,
                             fontSize = 12.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
@@ -89,7 +100,7 @@ fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int) -> Unit) {
             // ---- Score limit selector ----
             Text(
                 text = "计分上限",
-                color = SCORE_DIM,
+                color = dimColor,
                 fontSize = 11.sp
             )
 
@@ -104,15 +115,18 @@ fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int) -> Unit) {
                             .width(100.dp)
                             .height(36.dp)
                             .background(
-                                color = if (isSelected) SERVE_LEFT else SCORE_DIM.copy(alpha = 0.15f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                                color = if (isSelected)
+                                    SERVE_LEFT
+                                else
+                                    dimColor.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(10.dp)
                             )
                             .clickable { selectedLimit = limit },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "${limit}分",
-                            color = if (isSelected) SCORE_WHITE else SCORE_DIM,
+                            color = if (isSelected) SCORE_WHITE else dimColor,
                             fontSize = 17.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
