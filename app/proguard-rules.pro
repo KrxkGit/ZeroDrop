@@ -1,8 +1,9 @@
-# Keep JNI bridge — native methods must not be obfuscated
--keep class com.zerodrop.app.ScoreBridge {
+# Keep JNI bridge — native methods must not be obfuscated.
+# nativePtr field is looked up by name via GetFieldID from C++ JNI layer,
+# so its name must be preserved both for read and write access.
+-keepclassmembers class com.zerodrop.app.ScoreBridge {
     native <methods>;
-    public <methods>;
-    protected <methods>;
+    long nativePtr;
 }
 
 # Keep data classes used at JNI boundary

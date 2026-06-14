@@ -66,7 +66,11 @@ fun ScoringScreen(
     val config = LocalConfiguration.current
     val minDim = minOf(config.screenWidthDp, config.screenHeightDp)
     val scale = (minDim / 200f).coerceIn(0.65f, 1.2f)
-    val scoreFontSz = (60 * scale).sp
+
+    // Round screens have less visible area near the edges — use a smaller font
+    // so digits don't get clipped by the circular display boundary.
+    val isRound = config.isScreenRound
+    val scoreFontSz = if (isRound) (48 * scale).sp else (60 * scale).sp
     val setFontSz    = (10 * scale).sp
     val winsFontSz   = (11 * scale).sp
     val dotSz        = (10 * scale).dp

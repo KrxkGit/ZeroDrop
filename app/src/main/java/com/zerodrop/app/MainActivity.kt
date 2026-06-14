@@ -1,6 +1,7 @@
 package com.zerodrop.app
 
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -8,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.ambient.AmbientModeSupport
+import androidx.wear.ambient.AmbientModeSupport.AmbientCallbackProvider
 import com.zerodrop.app.ui.AmbientUiState
 import com.zerodrop.app.ui.LocalAmbientState
 import com.zerodrop.app.ui.ScoringScreen
@@ -17,18 +19,23 @@ import com.zerodrop.app.ui.theme.ZeroDropTheme
 /**
  * Main entry point for ZeroDrop on Wear OS.
  *
- * Implements [AmbientModeSupport.AmbientCallbackProvider] to receive
- * ambient-mode lifecycle events (enter/exit/update). The ambient state
- * is bridged to Compose via [LocalAmbientState] for ambient-aware UI.
+ * Only attaches [AmbientModeSupport] when the wearable shared library is
+ * physically present on the device — probes for the same class that
+ * SharedLibraryVersion.PresenceHolder checks internally. This avoids a
+ * hard crash during the ambient Fragment's lifecycle on devices that
+ * lack com.google.android.wearable.
  */
 class MainActivity : FragmentActivity(),
-    AmbientModeSupport.AmbientCallbackProvider {
+    AmbientCallbackProvider {
 
-    private val ambientController: AmbientModeSupport.AmbientController by lazy {
-        AmbientModeSupport.attach(this)
-    }
+    private val ambientController: AmbientModeSupport.AmbientController? =
+        if (wearableLibraryPresent()) {
+            AmbientModeSupport.attach(this)
+        } else {
+            Log.w(TAG, "Wearable shared library missing — ambient mode disabled")
+            null
+        }
 
-    // Mutable ambient flag — updated by callbacks, read by Compose
     private val isAmbient = mutableStateOf(false)
 
     override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback {
@@ -36,9 +43,7 @@ class MainActivity : FragmentActivity(),
             override fun onEnterAmbient(ambientDetails: Bundle?) {
                 isAmbient.value = true
             }
-            override fun onUpdateAmbient() {
-                // Update burn-in protection offsets if needed
-            }
+            override fun onUpdateAmbient() {}
             override fun onExitAmbient() {
                 isAmbient.value = false
             }
@@ -49,17 +54,12 @@ class MainActivity : FragmentActivity(),
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Touch the controller to trigger fragment attachment
-        ambientController
-
         setContent {
             val ambient by isAmbient
 
             // ── Screen-on management ──
-            // Keep screen on while app is in the foreground.
-            // Ambient mode takes over when the watch dims — FLAG_KEEP_SCREEN_ON
-            // keeps the display awake in interactive mode; the system handles
-            // always-on display (AOD) automatically via AmbientModeSupport.
+            // FLAG_KEEP_SCREEN_ON keeps the display awake in interactive mode.
+            // When ambient is available, the system handles AOD automatically.
             DisposableEffect(Unit) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 onDispose {
@@ -104,6 +104,24 @@ class MainActivity : FragmentActivity(),
                         }
                     }
                 }
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "ZeroDrop"
+
+        /**
+         * Mirrors SharedLibraryVersion.isSharedLibPresent() —
+         * probes for the wearable-compat controller class before
+         * the ambient Fragment ever enters its lifecycle.
+         */
+        private fun wearableLibraryPresent(): Boolean {
+            return try {
+                Class.forName("com.google.android.wearable.compat.WearableActivityController")
+                true
+            } catch (_: ClassNotFoundException) {
+                false
             }
         }
     }

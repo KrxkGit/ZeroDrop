@@ -33,6 +33,11 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault">
 
+        <!-- Required by AmbientModeSupport for always-on display -->
+        <uses-library
+            android:name="com.google.android.wearable"
+            android:required="false" />
+
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="true" />

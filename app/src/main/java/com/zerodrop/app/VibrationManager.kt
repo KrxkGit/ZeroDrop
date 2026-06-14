@@ -1,20 +1,40 @@
 package com.zerodrop.app
 
 import android.content.Context
+import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.os.VibratorManager
 
 /**
  * Haptic feedback manager providing differentiated vibration patterns
  * as specified in the PRD interaction table.
+ *
+ * Uses VibratorManager on API 31+; falls back to the deprecated
+ * getSystemService(VIBRATOR_SERVICE) on older Wear OS devices.
  */
 class VibrationManager(context: Context) {
 
-    private val vibrator: Vibrator = run {
-        val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-        manager?.defaultVibrator
-            ?: context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    private val vibrator: Vibrator = getVibratorCompat(context)
+
+    /**
+     * Obtain a [Vibrator] across API levels without crashing on
+     * devices that lack android.os.VibratorManager (API < 31).
+     */
+    @Suppress("DEPRECATION")
+    private fun getVibratorCompat(context: Context): Vibrator {
+        // Try the API 31+ path via reflection so the class reference
+        // doesn't cause NoClassDefFoundError on older devices.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val managerClass = Class.forName("android.os.VibratorManager")
+                val service = context.getSystemService(managerClass)
+                val defaultVibratorMethod = managerClass.getMethod("getDefaultVibrator")
+                return defaultVibratorMethod.invoke(service) as Vibrator
+            } catch (_: Exception) {
+                // Fall through to the legacy path
+            }
+        }
+        return context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     }
 
     /** 己方加分 — 短促、清脆的单次震动 */
