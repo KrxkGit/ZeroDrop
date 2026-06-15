@@ -28,13 +28,7 @@ import com.zerodrop.app.ui.theme.ZeroDropTheme
 class MainActivity : FragmentActivity(),
     AmbientCallbackProvider {
 
-    private val ambientController: AmbientModeSupport.AmbientController? =
-        if (wearableLibraryPresent()) {
-            AmbientModeSupport.attach(this)
-        } else {
-            Log.w(TAG, "Wearable shared library missing — ambient mode disabled")
-            null
-        }
+    private var ambientController: AmbientModeSupport.AmbientController? = null
 
     private val isAmbient = mutableStateOf(false)
 
@@ -52,6 +46,14 @@ class MainActivity : FragmentActivity(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        ambientController = if (wearableLibraryPresent()) {
+            AmbientModeSupport.attach(this)
+        } else {
+            Log.w(TAG, "Wearable shared library missing — ambient mode disabled")
+            null
+        }
+
         enableEdgeToEdge()
 
         setContent {

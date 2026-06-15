@@ -53,7 +53,8 @@
             android:exported="true"
             android:taskAffinity=""
             android:launchMode="singleTask"
-            android:keepScreenOn="false">
+            android:keepScreenOn="false"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
