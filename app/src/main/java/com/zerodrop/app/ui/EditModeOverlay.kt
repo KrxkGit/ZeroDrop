@@ -31,8 +31,9 @@ fun EditModeOverlay(
     leftScore: Int,
     rightScore: Int,
     serveSide: Int,
+    wearerHalf: Int = -1,
     canUndo: Boolean = false,
-    onScoreChange: (left: Int, right: Int, serveSide: Int) -> Unit,
+    onScoreChange: (left: Int, right: Int, serveSide: Int, wearerHalf: Int) -> Unit,
     onConfirm: () -> Unit,
     onUndo: () -> Unit = {},
     onNewMatch: () -> Unit = {}
@@ -40,6 +41,8 @@ fun EditModeOverlay(
     var editLeft by remember(leftScore) { mutableIntStateOf(leftScore) }
     var editRight by remember(rightScore) { mutableIntStateOf(rightScore) }
     var editWhoServes by remember(serveSide) { mutableIntStateOf(serveSide shr 1) }
+    var editHalf by remember(wearerHalf) { mutableIntStateOf(if (wearerHalf >= 0) wearerHalf else 0) }
+    val isDoubles = wearerHalf >= 0
 
     val config = LocalConfiguration.current
     val minDim = minOf(config.screenWidthDp, config.screenHeightDp)
@@ -55,7 +58,7 @@ fun EditModeOverlay(
     }
 
     val updateScores: () -> Unit = {
-        onScoreChange(editLeft, editRight, computeServeSide())
+        onScoreChange(editLeft, editRight, computeServeSide(), editHalf)
     }
 
     Box(
@@ -102,7 +105,19 @@ fun EditModeOverlay(
 
             Spacer(modifier = Modifier.height((12 * scale).dp))
 
-            // Opponent score
+            // ---- 双打: 我站位 toggle ----
+            if (isDoubles) {
+                EditHalfToggle(
+                    half = editHalf,
+                    scale = scale,
+                    onToggle = {
+                        editHalf = 1 - editHalf
+                        updateScores()
+                    }
+                )
+                Spacer(modifier = Modifier.height((12 * scale).dp))
+            }
+
             EditScoreRow(
                 label = "对方",
                 score = editRight,
@@ -220,6 +235,36 @@ private fun ServeWhoToggle(whoServes: Int, scale: Float, onToggle: () -> Unit) {
             Box(
                 Modifier.size((26 * scale).dp)
                     .background(color = if (!isSelfServing) SERVE_RIGHT else Color.Transparent, shape = CircleShape)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditHalfToggle(half: Int, scale: Float, onToggle: () -> Unit) {
+    val isLeft = half == 0
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(SCORE_DIM.copy(alpha = 0.1f))
+            .clickable { onToggle() }
+            .padding((8 * scale).dp)
+    ) {
+        Text(text = "我站位", color = SCORE_DIM, fontSize = (10 * scale).sp)
+        Spacer(modifier = Modifier.height((6 * scale).dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy((18 * scale).dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size((26 * scale).dp)
+                    .background(color = if (isLeft) SERVE_LEFT else Color.Transparent, shape = CircleShape)
+            )
+            Text(text = "↔", color = SCORE_DIM, fontSize = (10 * scale).sp)
+            Box(
+                Modifier.size((26 * scale).dp)
+                    .background(color = if (!isLeft) SERVE_RIGHT else Color.Transparent, shape = CircleShape)
             )
         }
     }

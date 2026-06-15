@@ -34,8 +34,9 @@ struct GameSnapshot {
     int needsSideSwitch;     // 0/1 是否需要换边
     int sideSwitchedThisSet;  // 0/1 本局是否已换边
     int needsSetEndSwitch;    // 0/1 本局结束后是否需要换边（非决胜局结束）
+    int wearerHalf;   // 0/1 佩戴者当前左右半区 (0=left, 1=right)，双打用
 
-    static constexpr int SNAPSHOT_SIZE = 13;
+    static constexpr int SNAPSHOT_SIZE = 14;
 
     // 序列化到 IntArray
     void toIntArray(int* out) const;
@@ -47,8 +48,9 @@ class ScoreFsm {
 public:
     ScoreFsm();
 
-    // 初始化/重置 — totalSets: 1=单局, 3=三局两胜
-    void init(int scoreLimit, int totalSets = 3);
+    // 初始化/重置 — totalSets: 1=单局, 3=三局两胜; initHalf: 佩戴者初始半区 0=left,1=right
+    // 默认 -1 表示单打模式（不追踪半区）
+    void init(int scoreLimit, int totalSets = 3, int initHalf = -1);
     void reset();
 
     // 加分操作
@@ -60,7 +62,7 @@ public:
 
     // 编辑模式
     void enterEditMode();
-    bool setEditScores(int left, int right, int serveSide);
+    bool setEditScores(int left, int right, int serveSide, int wearerHalf = -1);
     void confirmEdit();
 
     // 换边确认
@@ -99,6 +101,7 @@ private:
 
     int m_totalSets = 3;      // 1=单局, 3=三局两胜
     int m_setsToWin = 2;      // (m_totalSets + 1) / 2
+    int m_initHalf = -1;      // 佩戴者初始半区，-1=单打，0=左，1=右
 
     void pushHistory();
     void recalculateMeta();

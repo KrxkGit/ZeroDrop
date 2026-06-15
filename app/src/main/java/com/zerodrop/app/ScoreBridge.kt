@@ -3,11 +3,11 @@ package com.zerodrop.app
 /**
  * JNI bridge to the C++ ScoreFsm.
  *
- * The native layer returns state via IntArray snapshots with 13 elements:
+ * The native layer returns state via IntArray snapshots with 14 elements:
  *   [0] leftScore     [1] rightScore    [2] scoreLimit    [3] serveSide
  *   [4] currentSet    [5] leftSetWins   [6] rightSetWins  [7] fsmState
  *   [8] isGamePoint   [9] isMatchPoint  [10] needsSideSwitch [11] sideSwitchedThisSet
- *   [12] needsSetEndSwitch
+ *   [12] needsSetEndSwitch  [13] wearerHalf
  */
 class ScoreBridge {
 
@@ -18,15 +18,16 @@ class ScoreBridge {
         nativePtr = nativeInit()
     }
 
-    fun setup(scoreLimit: Int, totalSets: Int = 3) = nativeSetup(scoreLimit, totalSets)
+    fun setup(scoreLimit: Int, totalSets: Int = 3, initHalf: Int = -1) =
+        nativeSetup(scoreLimit, totalSets, initHalf)
 
     fun scoreLeft(): Boolean = nativeScoreLeft()
     fun scoreRight(): Boolean = nativeScoreRight()
     fun undo(): Boolean = nativeUndo()
 
     fun enterEditMode() = nativeEnterEditMode()
-    fun setEditScores(left: Int, right: Int, serveSide: Int): Boolean =
-        nativeSetEditScores(left, right, serveSide)
+    fun setEditScores(left: Int, right: Int, serveSide: Int, wearerHalf: Int = -1): Boolean =
+        nativeSetEditScores(left, right, serveSide, wearerHalf)
     fun confirmEdit() = nativeConfirmEdit()
     fun confirmSideSwitch() = nativeConfirmSideSwitch()
 
@@ -58,12 +59,12 @@ class ScoreBridge {
     // Native methods
     private external fun nativeInit(): Long
     private external fun nativeDestroy()
-    private external fun nativeSetup(scoreLimit: Int, totalSets: Int)
+    private external fun nativeSetup(scoreLimit: Int, totalSets: Int, initHalf: Int)
     private external fun nativeScoreLeft(): Boolean
     private external fun nativeScoreRight(): Boolean
     private external fun nativeUndo(): Boolean
     private external fun nativeEnterEditMode()
-    private external fun nativeSetEditScores(left: Int, right: Int, serveSide: Int): Boolean
+    private external fun nativeSetEditScores(left: Int, right: Int, serveSide: Int, wearerHalf: Int): Boolean
     private external fun nativeConfirmEdit()
     private external fun nativeConfirmSideSwitch()
     private external fun nativeGetStateSnapshot(outArray: IntArray)

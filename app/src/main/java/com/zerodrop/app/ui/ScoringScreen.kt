@@ -62,6 +62,15 @@ fun ScoringScreen(
     val whoServes = state.serveSide shr 1
     val servesRight = (state.serveSide and 1) == 1
 
+    // ── 双打：佩戴者在场上谁发球 ──
+    val serveText = when {
+        whoServes != 0 -> " · 对方发球"
+        state.wearerHalf < 0 -> " · 己方发球"
+        // 双打：己方得分为偶数→右半区发球，奇数→左半区发球
+        (state.wearerHalf == 1) == servesRight -> " · 我发球"
+        else -> " · 搭档发球"
+    }
+
     // ---- Dynamic sizing ----
     val config = LocalConfiguration.current
     val minDim = minOf(config.screenWidthDp, config.screenHeightDp)
@@ -121,7 +130,7 @@ fun ScoringScreen(
             Text(
                 text = buildString {
                     append("Set ${state.currentSet}")
-                    if (whoServes == 0) append(" · 己方发球") else append(" · 对方发球")
+                    append(serveText)
                 },
                 color = setTextColor,
                 fontSize = setFontSz,
@@ -208,8 +217,9 @@ fun ScoringScreen(
             leftScore = state.leftScore,
             rightScore = state.rightScore,
             serveSide = state.serveSide,
+            wearerHalf = state.wearerHalf,
             canUndo = state.canUndo,
-            onScoreChange = { l, r, sv -> viewModel.setEditScores(l, r, sv) },
+            onScoreChange = { l, r, sv, wh -> viewModel.setEditScores(l, r, sv, wh) },
             onConfirm = { viewModel.confirmEdit() },
             onUndo = { viewModel.undo() },
             onNewMatch = onNewMatch

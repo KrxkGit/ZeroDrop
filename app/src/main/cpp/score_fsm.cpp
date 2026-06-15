@@ -21,6 +21,7 @@ void GameSnapshot::toIntArray(int* out) const {
     out[10] = needsSideSwitch;
     out[11] = sideSwitchedThisSet;
     out[12] = needsSetEndSwitch;
+    out[13] = wearerHalf;
 }
 
 GameSnapshot GameSnapshot::fromIntArray(const int* in) {
@@ -38,6 +39,7 @@ GameSnapshot GameSnapshot::fromIntArray(const int* in) {
     snap.needsSideSwitch       = in[10];
     snap.sideSwitchedThisSet   = (SNAPSHOT_SIZE > 11) ? in[11] : 0;
     snap.needsSetEndSwitch     = (SNAPSHOT_SIZE > 12) ? in[12] : 0;
+    snap.wearerHalf            = (SNAPSHOT_SIZE > 13) ? in[13] : 0;
     return snap;
 }
 
@@ -45,24 +47,27 @@ GameSnapshot GameSnapshot::fromIntArray(const int* in) {
 
 ScoreFsm::ScoreFsm() : m_state(FsmState::SETUP) {
     m_snapshot = GameSnapshot{0, 0, 21, 1, 1, 0, 0,
-                              static_cast<int>(FsmState::SETUP), 0, 0, 0, 0, 0};
+                              static_cast<int>(FsmState::SETUP), 0, 0, 0, 0, 0, 0};
 }
 
-void ScoreFsm::init(int scoreLimit, int totalSets) {
+void ScoreFsm::init(int scoreLimit, int totalSets, int initHalf) {
     m_history.clear();
     m_state = FsmState::PLAYING;
     m_totalSets = totalSets;
     m_setsToWin = (totalSets + 1) / 2;
+    m_initHalf = initHalf;
+    int wh = (initHalf < 0) ? 0 : initHalf;  // doubles: initHalf; singles: 0 (unused)
     m_snapshot = GameSnapshot{0, 0, scoreLimit, 1, 1, 0, 0,
-                              static_cast<int>(FsmState::PLAYING), 0, 0, 0, 0, 0};
+                              static_cast<int>(FsmState::PLAYING), 0, 0, 0, 0, 0, wh};
 }
 
 void ScoreFsm::reset() {
     int limit = m_snapshot.scoreLimit;
     m_history.clear();
     m_state = FsmState::SETUP;
+    m_initHalf = -1;
     m_snapshot = GameSnapshot{0, 0, limit, 1, 1, 0, 0,
-                              static_cast<int>(FsmState::SETUP), 0, 0, 0, 0, 0};
+                              static_cast<int>(FsmState::SETUP), 0, 0, 0, 0, 0, 0};
 }
 
 void ScoreFsm::pushHistory() {
@@ -74,7 +79,17 @@ bool ScoreFsm::scoreLeft() {
     if (m_snapshot.needsSideSwitch) return false;
 
     pushHistory();
+
+    // ── 双打: 摘下得分前"我方是否已持发球权" ──
+    bool weWereServing = ((m_snapshot.serveSide >> 1) & 1) == 0;
+
     m_snapshot.leftScore++;
+
+    // ── 双打佩戴者半区追踪 ──
+    // 我方持球得分（retain serve）→ 搭档互换半区，佩戴者始终 toggle
+    if (m_initHalf >= 0 && weWereServing) {
+        m_snapshot.wearerHalf = 1 - m_snapshot.wearerHalf;
+    }
 
     // 计算发球方 + 站位
     // 己方得分 → 己方发球 (who=0)
@@ -142,13 +157,17 @@ void ScoreFsm::enterEditMode() {
     m_snapshot.fsmState = static_cast<int>(FsmState::EDITING);
 }
 
-bool ScoreFsm::setEditScores(int left, int right, int serveSide) {
+bool ScoreFsm::setEditScores(int left, int right, int serveSide, int wearerHalf) {
     if (m_state != FsmState::EDITING) return false;
     if (left < 0 || right < 0 || serveSide < 0 || serveSide > 3) return false;
 
     m_snapshot.leftScore = left;
     m_snapshot.rightScore = right;
     m_snapshot.serveSide = serveSide;
+    // 编辑中可以修正佩戴者半区位置
+    if (wearerHalf >= 0) {
+        m_snapshot.wearerHalf = wearerHalf;
+    }
     recalculateMeta();
     return true;
 }
@@ -163,7 +182,6 @@ void ScoreFsm::confirmEdit() {
 void ScoreFsm::confirmSideSwitch() {
     if (m_state != FsmState::SIDE_SWITCH) return;
 
-    bool wasMidSetSwitch = (m_snapshot.needsSideSwitch != 0);
     bool wasSetEndSwitch = (m_snapshot.needsSetEndSwitch != 0);
 
     m_state = FsmState::PLAYING;
@@ -171,6 +189,11 @@ void ScoreFsm::confirmSideSwitch() {
     m_snapshot.needsSideSwitch = 0;
     m_snapshot.needsSetEndSwitch = 0;
     m_snapshot.sideSwitchedThisSet = 1;
+
+    // Any side switch (set-end or mid-set) flips the wearer's half
+    if (m_initHalf >= 0) {
+        m_snapshot.wearerHalf = 1 - m_snapshot.wearerHalf;
+    }
 
     if (wasSetEndSwitch) {
         // End-of-set switch: advance to next set now
@@ -198,18 +221,19 @@ void ScoreFsm::restoreFromIntArray(const int* in) {
 }
 
 std::string ScoreFsm::serialize() const {
-    // 格式: "scoreLimit,totalSets,historySize:..."
+    // 格式: "scoreLimit,totalSets,historySize,initHalf;..."
     std::ostringstream oss;
-    oss << m_snapshot.scoreLimit << "," << m_totalSets << "," << m_history.size() << ";";
+    oss << m_snapshot.scoreLimit << "," << m_totalSets << "," << m_history.size() << "," << m_initHalf << ";";
 
-    // 当前快照
+    // 当前快照 (13 fields)
     oss << m_snapshot.leftScore << "," << m_snapshot.rightScore << ","
         << m_snapshot.serveSide << "," << m_snapshot.currentSet << ","
         << m_snapshot.leftSetWins << "," << m_snapshot.rightSetWins << ","
         << m_snapshot.fsmState << ","
         << m_snapshot.isGamePoint << "," << m_snapshot.isMatchPoint << ","
         << m_snapshot.needsSideSwitch << ","
-        << m_snapshot.sideSwitchedThisSet;
+        << m_snapshot.sideSwitchedThisSet << ","
+        << m_snapshot.wearerHalf;
 
     // 历史栈
     for (const auto& snap : m_history) {
@@ -220,7 +244,8 @@ std::string ScoreFsm::serialize() const {
             << snap.fsmState << ","
             << snap.isGamePoint << "," << snap.isMatchPoint << ","
             << snap.needsSideSwitch << ","
-            << snap.sideSwitchedThisSet;
+            << snap.sideSwitchedThisSet << ","
+            << snap.wearerHalf;
     }
 
     return oss.str();
@@ -232,17 +257,25 @@ bool ScoreFsm::deserialize(const std::string& data) {
         std::string header;
         std::getline(iss, header, ';');
 
-        // Parse header: "scoreLimit,totalSets,historySize"
+        // Parse header: "scoreLimit,totalSets,historySize[,initHalf]"
         auto comma1 = header.find(',');
         if (comma1 == std::string::npos) return false;
         int limit = std::stoi(header.substr(0, comma1));
         auto comma2 = header.find(',', comma1 + 1);
         int totalSets = 3;
         size_t historySize = 0;
+        m_initHalf = -1;
         if (comma2 != std::string::npos) {
-            // New format: scoreLimit,totalSets,historySize
+            auto comma3 = header.find(',', comma2 + 1);
             totalSets = std::stoi(header.substr(comma1 + 1, comma2 - comma1 - 1));
-            historySize = std::stoul(header.substr(comma2 + 1));
+            if (comma3 != std::string::npos) {
+                // New format: scoreLimit,totalSets,historySize,initHalf
+                historySize = std::stoul(header.substr(comma2 + 1, comma3 - comma2 - 1));
+                m_initHalf = std::stoi(header.substr(comma3 + 1));
+            } else {
+                // intermediate format: scoreLimit,totalSets,historySize
+                historySize = std::stoul(header.substr(comma2 + 1));
+            }
         } else {
             // Old format: scoreLimit,historySize
             historySize = std::stoul(header.substr(comma1 + 1));
@@ -250,19 +283,24 @@ bool ScoreFsm::deserialize(const std::string& data) {
         m_totalSets = totalSets;
         m_setsToWin = (totalSets + 1) / 2;
 
-        // Parse current snapshot (backwards-compat with old 11-field saves)
+        // Parse current snapshot (backwards-compat: old format had 11 fields:
+        //   leftScore,rightScore,serveSide,currentSet,leftSetWins,rightSetWins,
+        //   fsmState,isGamePoint,isMatchPoint,needsSideSwitch,sideSwitchedThisSet
+        // New format appends wearerHalf at index 11)
         std::string snapStr;
         std::getline(iss, snapStr, ':');
         std::istringstream snapStream(snapStr);
-        int vals[12] = {0};
+        int vals[14] = {0};
         int fieldCount = 0;
-        for (int i = 0; i < 12; ++i) {
+        for (int i = 0; i < 14; ++i) {
             std::string token;
             if (!std::getline(snapStream, token, ',')) break;
             vals[i] = std::stoi(token);
             fieldCount++;
         }
-        int sideSwitchedVal = (fieldCount >= 12) ? vals[11] : 0;
+        int needsSideSwitchVal = (fieldCount >= 10) ? vals[9] : 0;
+        int sideSwitchedVal    = (fieldCount >= 11) ? vals[10] : 0;
+        int wearerHalfVal      = (fieldCount >= 12) ? vals[11] : 0;
 
         m_snapshot = GameSnapshot{
             vals[0], vals[1], limit,
@@ -270,32 +308,38 @@ bool ScoreFsm::deserialize(const std::string& data) {
             vals[4], vals[5],
             vals[6],
             vals[7], vals[8],
-            vals[10], sideSwitchedVal
+            needsSideSwitchVal, sideSwitchedVal,
+            0,  // needsSetEndSwitch — not in text serialization, recomputed later
+            wearerHalfVal
         };
         m_state = static_cast<FsmState>(m_snapshot.fsmState);
 
-        // Parse history
+        // Parse history (same layout as current snapshot)
         m_history.clear();
         m_history.reserve(historySize);
         std::string histItem;
         while (std::getline(iss, histItem, ':')) {
             std::istringstream histStream(histItem);
-            int hvals[12] = {0};
+            int hvals[14] = {0};
             int hfieldCount = 0;
-            for (int i = 0; i < 12; ++i) {
+            for (int i = 0; i < 14; ++i) {
                 std::string token;
                 if (!std::getline(histStream, token, ',')) break;
                 hvals[i] = std::stoi(token);
                 hfieldCount++;
             }
-            int hSwitchVal = (hfieldCount >= 12) ? hvals[11] : 0;
+            int hSideSwitchVal = (hfieldCount >= 10) ? hvals[9] : 0;
+            int hSideSwitched  = (hfieldCount >= 11) ? hvals[10] : 0;
+            int hWearerVal     = (hfieldCount >= 12) ? hvals[11] : 0;
             m_history.push_back(GameSnapshot{
                 hvals[0], hvals[1], limit,
                 hvals[2], hvals[3],
                 hvals[4], hvals[5],
                 hvals[6],
                 hvals[7], hvals[8],
-                hvals[10], hSwitchVal
+                hSideSwitchVal, hSideSwitched,
+                0,  // needsSetEndSwitch
+                hWearerVal
             });
         }
 

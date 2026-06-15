@@ -76,13 +76,15 @@ class MainActivity : FragmentActivity(),
                     var screen by remember { mutableStateOf<Screen>(Screen.Setup) }
                     var scoreLimit by remember { mutableIntStateOf(21) }
                     var totalSets by remember { mutableIntStateOf(3) }
+                    var initHalf by remember { mutableIntStateOf(-1) }
 
                     when (screen) {
                         Screen.Setup -> {
                             SetupScreen(
-                                onStartMatch = { limit, sets ->
+                                onStartMatch = { limit, sets, half ->
                                     scoreLimit = limit
                                     totalSets = sets
+                                    initHalf = half
                                     screen = Screen.Scoring
                                 }
                             )
@@ -93,7 +95,7 @@ class MainActivity : FragmentActivity(),
                             )
 
                             LaunchedEffect(Unit) {
-                                viewModel.startMatch(scoreLimit, totalSets)
+                                viewModel.startMatch(scoreLimit, totalSets, initHalf)
                             }
 
                             ScoringScreen(

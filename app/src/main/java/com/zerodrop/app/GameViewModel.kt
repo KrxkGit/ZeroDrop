@@ -36,7 +36,8 @@ data class GameUiState(
     val needsSideSwitch: Boolean = false,
     val needsSetEndSwitch: Boolean = false,
     val canUndo: Boolean = false,
-    val isEditMode: Boolean = false
+    val isEditMode: Boolean = false,
+    val wearerHalf: Int = -1      // 佩戴者当前半区 0=左,1=右,-1=单打
 )
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
@@ -70,8 +71,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---- Public actions ----
 
-    fun startMatch(scoreLimit: Int, totalSets: Int = 3) {
-        fsm.setup(scoreLimit, totalSets)
+    fun startMatch(scoreLimit: Int, totalSets: Int = 3, initHalf: Int = -1) {
+        fsm.setup(scoreLimit, totalSets, initHalf)
         refreshState()
         persistState()
         onMatchStateChanged()
@@ -120,8 +121,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         onMatchStateChanged()
     }
 
-    fun setEditScores(left: Int, right: Int, serveSide: Int) {
-        fsm.setEditScores(left, right, serveSide)
+    fun setEditScores(left: Int, right: Int, serveSide: Int, wearerHalf: Int = -1) {
+        fsm.setEditScores(left, right, serveSide, wearerHalf)
         refreshState()
     }
 
@@ -170,7 +171,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 needsSideSwitch = snap.needsSideSwitch != 0,
                 needsSetEndSwitch = snap.needsSetEndSwitch != 0,
                 canUndo = canUndo,
-                isEditMode = FsmState.fromCode(snap.fsmState) == FsmState.EDITING
+                isEditMode = FsmState.fromCode(snap.fsmState) == FsmState.EDITING,
+                wearerHalf = snap.wearerHalf
             )
         }
         return snap

@@ -33,9 +33,9 @@ Java_com_zerodrop_app_ScoreBridge_nativeDestroy(JNIEnv* env, jobject thiz) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_zerodrop_app_ScoreBridge_nativeSetup(JNIEnv* env, jobject thiz, jint scoreLimit, jint totalSets) {
+Java_com_zerodrop_app_ScoreBridge_nativeSetup(JNIEnv* env, jobject thiz, jint scoreLimit, jint totalSets, jint initHalf) {
     auto* fsm = getFsm(env, thiz);
-    fsm->init(static_cast<int>(scoreLimit), static_cast<int>(totalSets));
+    fsm->init(static_cast<int>(scoreLimit), static_cast<int>(totalSets), static_cast<int>(initHalf));
 }
 
 JNIEXPORT jboolean JNICALL
@@ -64,9 +64,9 @@ Java_com_zerodrop_app_ScoreBridge_nativeEnterEditMode(JNIEnv* env, jobject thiz)
 
 JNIEXPORT jboolean JNICALL
 Java_com_zerodrop_app_ScoreBridge_nativeSetEditScores(
-    JNIEnv* env, jobject thiz, jint left, jint right, jint serveSide) {
+    JNIEnv* env, jobject thiz, jint left, jint right, jint serveSide, jint wearerHalf) {
     auto* fsm = getFsm(env, thiz);
-    return fsm->setEditScores(left, right, serveSide) ? JNI_TRUE : JNI_FALSE;
+    return fsm->setEditScores(left, right, serveSide, static_cast<int>(wearerHalf)) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
