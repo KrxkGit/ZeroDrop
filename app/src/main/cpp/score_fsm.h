@@ -84,6 +84,13 @@ public:
     // 历史栈大小
     size_t historySize() const { return m_history.size(); }
 
+    // 导出比赛数据用于二维码生成（多局）
+    // setsData: 多局数据，格式 "set1_data;set2_data;..."
+    //   每局数据：[首球发球方1=己方,0=对方][初始位置1=右区,0=左区][得分序列]
+    //   得分序列：1=己方得分, 0=对方得分
+    // 返回：用 | 分隔的多局数据
+    static std::string exportMatchData(const std::string& setsData);
+
     // 判断是否需要在局中换边（决胜局中途半场分）
     static bool shouldSwitchSides(int scoreLimit, int left, int right,
                                    int currentSet, int totalSets, bool alreadySwitched);

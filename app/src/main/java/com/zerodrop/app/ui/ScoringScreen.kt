@@ -239,6 +239,8 @@ fun ScoringScreen(
         MatchFinishedDialog(
             leftSetWins = state.leftSetWins,
             rightSetWins = state.rightSetWins,
+            leftScore = state.leftScore,
+            rightScore = state.rightScore,
             onNewMatch = onNewMatch
         )
     }
@@ -336,12 +338,18 @@ fun SideSwitchDialog(afterSet: Boolean, setNumber: Int, onConfirm: () -> Unit) {
 }
 
 @Composable
-fun MatchFinishedDialog(leftSetWins: Int, rightSetWins: Int, onNewMatch: () -> Unit) {
+fun MatchFinishedDialog(
+    leftSetWins: Int,
+    rightSetWins: Int,
+    leftScore: Int,
+    rightScore: Int,
+    onNewMatch: () -> Unit
+) {
     val winner = if (leftSetWins > rightSetWins) "己方" else "对方"
     AlertDialog(
         onDismissRequest = onNewMatch,
         title = { Text("🏆 比赛结束") },
-        text = { Text("${winner}获胜！\n大比分: $leftSetWins - $rightSetWins") },
+        text = { Text("${winner}获胜！\n大比分: $leftSetWins - $rightSetWins\n本局: $leftScore - $rightScore") },
         confirmButton = { Button(onClick = onNewMatch) { Text("新比赛") } }
     )
 }

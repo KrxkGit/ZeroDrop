@@ -8,15 +8,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.zerodrop.app.GameViewModel
 import com.zerodrop.app.ui.theme.*
 
 /**
@@ -27,13 +33,19 @@ import com.zerodrop.app.ui.theme.*
  *  - Start button
  */
 @Composable
-fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int, initHalf: Int) -> Unit) {
+fun SetupScreen(
+    onStartMatch: (scoreLimit: Int, totalSets: Int, initHalf: Int) -> Unit,
+    onShowQrCode: (data: String) -> Unit = {},
+    viewModel: GameViewModel = viewModel(factory = GameViewModel.Factory(LocalContext.current.applicationContext as android.app.Application))
+) {
     val limits = listOf(11, 15, 21)
     var selectedLimit by remember { mutableIntStateOf(21) }
     var selectedMode by remember { mutableIntStateOf(3) }
     var selectedHalf by remember { mutableIntStateOf(-1) }  // -1=not set, 0=left, 1=right
     val scrollState = rememberScrollState()
     val ambient = LocalAmbientState.current
+    val hasHistory = viewModel.hasMatchHistory()
+    var showClearConfirm by remember { mutableStateOf(false) }
 
     val textColor = if (ambient.isAmbient) AMBIENT_SCORE else SCORE_WHITE
     val dimColor = if (ambient.isAmbient) AMBIENT_DIM else SCORE_DIM
@@ -171,7 +183,63 @@ fun SetupScreen(onStartMatch: (scoreLimit: Int, totalSets: Int, initHalf: Int) -
                 Text("开始比赛", fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    onShowQrCode(viewModel.getHistoryQrCodeUrl())
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3B82F6),
+                    contentColor = Color.White
+                )
+            ) {
+                Text("生成历史二维码", fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+            }
+
+            if (hasHistory) {
+                TextButton(
+                    onClick = {
+                        showClearConfirm = true
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = Color(0xFF9CA3AF)
+                    )
+                ) {
+                    Text("清除历史记录", fontSize = 10.sp)
+                }
+            }
+
             Spacer(modifier = Modifier.weight(0.12f))
         }
+    }
+
+    // 清除历史记录确认对话框
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("确认清除") },
+            text = { Text("确定清除所有历史比赛记录？此操作不可撤销。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearHistory()
+                        showClearConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEF4444)
+                    )
+                ) {
+                    Text("清除", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) {
+                    Text("取消", color = dimColor)
+                }
+            }
+        )
     }
 }

@@ -127,4 +127,12 @@ Java_com_zerodrop_app_ScoreBridge_nativeGetHistorySize(JNIEnv* env, jobject thiz
     return static_cast<jint>(fsm->historySize());
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_zerodrop_app_ScoreBridge_nativeExportMatchData(JNIEnv* env, jobject thiz, jstring setsData) {
+    const char* utf = env->GetStringUTFChars(setsData, nullptr);
+    std::string data = zerodrop::ScoreFsm::exportMatchData(std::string(utf));
+    env->ReleaseStringUTFChars(setsData, utf);
+    return env->NewStringUTF(data.c_str());
+}
+
 } // extern "C"

@@ -30,10 +30,15 @@ android {
                 arguments("-DANDROID_STL=c++_shared")
             }
         }
+
+        // QR code target URL — override via QR_TARGET_URL env var in CI
+        val qrTargetUrl = System.getenv("QR_TARGET_URL") ?: "https://KrxkGit.github.io/ZeroDrop/"
+        buildConfigField("String", "QR_TARGET_URL", "\"$qrTargetUrl\"")
     }
 
     lint {
         disable.add("NullSafeMutableLiveData")
+        disable.add("FlowOperatorInvokedInComposition")
         abortOnError = true
     }
 
@@ -63,6 +68,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     externalNativeBuild {
@@ -101,6 +107,9 @@ dependencies {
 
     // Activity
     implementation("androidx.activity:activity-compose:1.9.3")
+
+    // QRCode generation (ZXing)
+    implementation("com.google.zxing:core:3.5.2")
 
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")

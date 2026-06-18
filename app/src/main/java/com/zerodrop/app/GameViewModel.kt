@@ -62,6 +62,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
+    // 每局数据跟踪（用于二维码导出）
+    private data class SetData(
+        val serveSelf: Boolean,      // 首球发球方
+        val initialRight: Boolean,   // 初始位置（右区）
+        val points: StringBuilder = StringBuilder()  // 得分序列
+    )
+    private val setsHistory = mutableListOf<SetData>()
+
     // ---- Persistence keys ----
     private val persistKey = stringPreferencesKey("fsm_serialized")
 
@@ -73,14 +81,36 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startMatch(scoreLimit: Int, totalSets: Int = 3, initHalf: Int = -1) {
         fsm.setup(scoreLimit, totalSets, initHalf)
+        // 初始化第一局数据，不清除历史记录
+        val whoServes = (1 shr 1 and 1) == 0  // serveSide = 1 表示己方发球右区
+        val servesRight = (1 and 1) == 1
+        setsHistory.add(SetData(
+            serveSelf = true,
+            initialRight = servesRight
+        ))
         refreshState()
         persistState()
         onMatchStateChanged()
     }
 
+    fun newSetStarted() {
+        // 新的一局开始，初始化新一局数据
+        val currentServeSide = _uiState.value.serveSide
+        val whoServes = (currentServeSide shr 1 and 1) == 0
+        val servesRight = (currentServeSide and 1) == 1
+        setsHistory.add(SetData(
+            serveSelf = whoServes,
+            initialRight = servesRight
+        ))
+    }
+
     fun scoreLeft() {
         val success = fsm.scoreLeft()
         if (success) {
+            // 记录得分到当前局
+            if (setsHistory.isNotEmpty()) {
+                setsHistory.last().points.append("1")
+            }
             vibrationManager.feedbackSelfScore()
             val snap = refreshState()
             if (snap.isGamePoint != 0 || snap.isMatchPoint != 0) {
@@ -94,6 +124,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun scoreRight() {
         val success = fsm.scoreRight()
         if (success) {
+            // 记录得分到当前局
+            if (setsHistory.isNotEmpty()) {
+                setsHistory.last().points.append("0")
+            }
             vibrationManager.feedbackOpponentScore()
             val snap = refreshState()
             if (snap.isGamePoint != 0 || snap.isMatchPoint != 0) {
@@ -150,8 +184,47 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         ongoingActivity.stopMatch()
     }
 
+    /** 导出比赛数据用于二维码生成 */
+    fun exportMatchData(): String {
+        // 生成多局数据字符串
+        val setsData = StringBuilder()
+        for (i in setsHistory.indices) {
+            val set = setsHistory[i]
+            // 格式: [首球发球方][初始位置][得分序列]
+            val setData = "${if (set.serveSelf) '1' else '0'}${if (set.initialRight) '1' else '0'}${set.points}"
+            setsData.append(setData)
+            if (i < setsHistory.size - 1) {
+                setsData.append(";")  // 用 ; 分隔各局数据
+            }
+        }
+        val result = fsm.exportMatchData(setsData.toString())
+        return result.ifEmpty { "EMPTY_DATA" } // 防止空数据
+    }
+
+    /** 生成历史数据二维码 URL */
+    fun getHistoryQrCodeUrl(): String {
+        val data = exportMatchData()
+        return "${BuildConfig.QR_TARGET_URL}?m=$data"
+    }
+
+    /** 是否有历史比赛数据 */
+    fun hasMatchHistory(): Boolean = setsHistory.any { it.points.isNotEmpty() }
+
+    /** 清除历史数据 */
+    fun clearHistory() {
+        setsHistory.clear()
+        _currentSet = 1
+    }
+
+    /** 生成二维码 URL */
+    fun getQrCodeUrl(): String {
+        val data = exportMatchData()
+        return "${BuildConfig.QR_TARGET_URL}?m=$data"
+    }
+
     // ---- Internal ----
 
+    private var _currentSet = 1
     private fun refreshState(): GameSnapshot {
         val arr = fsm.getStateSnapshot()
         val snap = GameSnapshot.fromIntArray(arr)
@@ -175,6 +248,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 wearerHalf = snap.wearerHalf
             )
         }
+
+        // 检测新局开始
+        if (snap.currentSet > _currentSet) {
+            newSetStarted()
+            _currentSet = snap.currentSet
+        }
+
         return snap
     }
 

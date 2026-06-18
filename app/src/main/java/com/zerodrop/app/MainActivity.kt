@@ -12,6 +12,7 @@ import androidx.wear.ambient.AmbientModeSupport
 import androidx.wear.ambient.AmbientModeSupport.AmbientCallbackProvider
 import com.zerodrop.app.ui.AmbientUiState
 import com.zerodrop.app.ui.LocalAmbientState
+import com.zerodrop.app.ui.QrCodeScreen
 import com.zerodrop.app.ui.ScoringScreen
 import com.zerodrop.app.ui.SetupScreen
 import com.zerodrop.app.ui.theme.ZeroDropTheme
@@ -77,6 +78,7 @@ class MainActivity : FragmentActivity(),
                     var scoreLimit by remember { mutableIntStateOf(21) }
                     var totalSets by remember { mutableIntStateOf(3) }
                     var initHalf by remember { mutableIntStateOf(-1) }
+                    var qrCodeData by remember { mutableStateOf("") }
 
                     when (screen) {
                         Screen.Setup -> {
@@ -86,6 +88,10 @@ class MainActivity : FragmentActivity(),
                                     totalSets = sets
                                     initHalf = half
                                     screen = Screen.Scoring
+                                },
+                                onShowQrCode = { data ->
+                                    qrCodeData = data
+                                    screen = Screen.QrCode
                                 }
                             )
                         }
@@ -104,6 +110,17 @@ class MainActivity : FragmentActivity(),
                                     screen = Screen.Setup
                                 },
                                 viewModel = viewModel
+                            )
+                        }
+                        Screen.QrCode -> {
+                            QrCodeScreen(
+                                matchData = qrCodeData,
+                                leftScore = 0,
+                                rightScore = 0,
+                                onBack = {
+                                    qrCodeData = ""
+                                    screen = Screen.Setup
+                                }
                             )
                         }
                     }
@@ -133,5 +150,6 @@ class MainActivity : FragmentActivity(),
 
 private enum class Screen {
     Setup,
-    Scoring
+    Scoring,
+    QrCode
 }

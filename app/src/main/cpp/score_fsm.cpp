@@ -443,4 +443,18 @@ bool ScoreFsm::shouldSwitchAfterSet(int currentSet, int totalSets) {
     return (totalSets > 1 && currentSet < totalSets);
 }
 
+std::string ScoreFsm::exportMatchData(const std::string& setsData) {
+    // setsData 格式: "set1_data;set2_data;..."
+    // 每局数据: [首球发球方][初始位置][得分序列]
+    // 需要把 ; 换成 | 返回
+    std::string result = setsData;
+    // 将所有 ; 替换为 |
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (result[i] == ';') {
+            result[i] = '|';
+        }
+    }
+    return result;
+}
+
 } // namespace zerodrop
