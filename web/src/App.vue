@@ -6,7 +6,7 @@
     <div class="error-detail">{{ renderError }}</div>
     <button class="back-button" @click="renderError = ''; matchData = ''">返回</button>
   </div>
-  <Review v-else-if="matchData" :data="matchData" />
+  <Review v-else-if="matchData" :data="matchData" :is-wechat="isWechat" />
   <div v-else class="empty-state" @drop.prevent="handleDrop" @dragover.prevent>
     <div class="empty-icon">🏸</div>
     <h2 class="empty-title">ZeroDrop 赛后复盘</h2>
@@ -37,6 +37,10 @@
       </label>
     </div>
 
+    <p class="empty-hint">
+      请使用手机相机扫描手表上的二维码，或在微信中<span class="hint-highlight">复制链接</span>后在浏览器中打开
+    </p>
+
     <div v-if="error" class="error-msg">{{ error }}</div>
   </div>
 </template>
@@ -51,18 +55,58 @@ const manualInput = ref('')
 const error = ref('')
 const renderError = ref('')
 
+// WeChat browser detection
+const isWechat = ref(false)
+
+function detectWechat(): boolean {
+  const ua = navigator.userAgent.toLowerCase()
+  return ua.includes('micromessenger')
+}
+
 onErrorCaptured((err) => {
   renderError.value = String(err)
   return false
 })
 
 onMounted(() => {
+  isWechat.value = detectWechat()
+
   const params = new URLSearchParams(window.location.search)
-  const data = params.get('m')
+  let data = params.get('m')
+
+  if (data) {
+    // Persist to sessionStorage for same-browser recovery
+    try { sessionStorage.setItem('zerodrop_m', data) } catch { /* ignore */ }
+
+    // In WeChat, store data in URL hash — this survives "在浏览器打开"
+    // because WeChat preserves the hash fragment when switching to system browser
+    if (isWechat.value) {
+      location.hash = encodeURIComponent(data)
+    }
+  } else {
+    // No query param — try hash fallback (survives WeChat → Browser transition)
+    if (location.hash && location.hash.length > 1) {
+      try {
+        const decoded = decodeURIComponent(location.hash.slice(1))
+        if (decoded) {
+          data = decoded
+          location.hash = '' // clean up
+        }
+      } catch { /* ignore */ }
+    }
+    // Try sessionStorage as last resort
+    if (!data) {
+      try {
+        const stored = sessionStorage.getItem('zerodrop_m')
+        if (stored) data = stored
+      } catch { /* ignore */ }
+    }
+  }
 
   if (data) {
     matchData.value = data
-    window.history.replaceState({}, '', '/zerodrop-web/')
+    // Clean URL without losing navigation ability
+    window.history.replaceState({}, '', window.location.pathname)
   }
 })
 
@@ -285,5 +329,18 @@ function submitManual() {
   padding: 10px 24px;
   font-size: 14px;
   cursor: pointer;
+}
+
+.empty-hint {
+  margin-top: 28px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+  max-width: 280px;
+  line-height: 1.6;
+}
+
+.hint-highlight {
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
 }
 </style>

@@ -1,9 +1,18 @@
 <template>
   <div>
+    <!-- WeChat 浏览器提示 -->
+    <div v-if="isWechat" class="wechat-banner">
+      <span class="wechat-icon">💡</span>
+      <span class="wechat-text">微信内无法保存截图，请点击右上角 <strong>「在浏览器打开」</strong> 或长按保存</span>
+    </div>
+
     <!-- 顶部操作栏 -->
     <div class="action-bar">
       <span class="action-bar-title">赛后复盘</span>
-      <button class="save-btn" @click="saveScreenshot">保存截图</button>
+      <div class="action-bar-buttons">
+        <button v-if="isWechat" class="copy-btn" @click="copyLink">复制链接</button>
+        <button v-if="!isWechat" class="save-btn" @click="saveScreenshot">保存截图</button>
+      </div>
     </div>
     <div ref="captureRef" class="review-container">
       <!-- 截图标题区 -->
@@ -105,9 +114,40 @@ use([CanvasRenderer, LineChart, TooltipComponent, GridComponent, GridSimpleCompo
 
 const props = defineProps<{
   data: string
+  isWechat?: boolean
 }>()
 
 const captureRef = ref<HTMLElement | null>(null)
+
+/** 复制完整链接（微信内使用，方便用户在浏览器打开） */
+async function copyLink() {
+  const url = `${window.location.origin}${window.location.pathname}?m=${encodeURIComponent(props.data)}`
+  try {
+    await navigator.clipboard.writeText(url)
+    // 简单提示：短暂修改按钮文字
+    const btn = document.querySelector('.copy-btn') as HTMLButtonElement
+    if (btn) {
+      const original = btn.textContent
+      btn.textContent = '已复制 ✓'
+      setTimeout(() => { btn.textContent = original }, 2000)
+    }
+  } catch {
+    // 降级：选中文本手动复制
+    const input = document.createElement('textarea')
+    input.value = url
+    input.style.cssText = 'position:fixed;left:-9999px'
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    const btn = document.querySelector('.copy-btn') as HTMLButtonElement
+    if (btn) {
+      const original = btn.textContent
+      btn.textContent = '已复制 ✓'
+      setTimeout(() => { btn.textContent = original }, 2000)
+    }
+  }
+}
 
 async function saveScreenshot() {
   const el = captureRef.value
@@ -314,6 +354,11 @@ const chartOption = computed(() => {
   color: #fff;
 }
 
+.action-bar-buttons {
+  display: flex;
+  gap: 8px;
+}
+
 .save-btn {
   background: #3b82f6;
   color: white;
@@ -332,6 +377,55 @@ const chartOption = computed(() => {
 
 .save-btn:active {
   background: #1d4ed8;
+}
+
+/* WeChat 提示横幅 */
+.wechat-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  background: rgba(251, 191, 36, 0.12);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.wechat-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.wechat-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+}
+
+.wechat-text strong {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.copy-btn {
+  background: transparent;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.copy-btn:hover {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.6);
+}
+
+.copy-btn:active {
+  background: rgba(251, 191, 36, 0.2);
 }
 
 .card {
