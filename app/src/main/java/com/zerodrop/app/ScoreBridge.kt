@@ -46,7 +46,13 @@ class ScoreBridge {
     fun getHistorySize(): Int = nativeGetHistorySize()
 
     /** 导出比赛数据用于二维码生成（多局） */
-    fun exportMatchData(setsData: String): String = nativeExportMatchData(setsData)
+    fun exportMatchData(): String = nativeExportMatchData()
+
+    /** 是否有任何得分记录（用于 UI 判断） */
+    fun hasPointLogData(): Boolean = nativeHasPointLogData()
+
+    /** 清除所有得分流水 */
+    fun clearPointLog() = nativeClearPointLog()
 
     fun dispose() {
         if (nativePtr != 0L) {
@@ -76,5 +82,7 @@ class ScoreBridge {
     private external fun nativeDeserialize(data: String): Boolean
     private external fun nativeIsGamePoint(): Boolean
     private external fun nativeGetHistorySize(): Int
-    private external fun nativeExportMatchData(setsData: String): String
+    private external fun nativeExportMatchData(): String
+    private external fun nativeHasPointLogData(): Boolean
+    private external fun nativeClearPointLog()
 }

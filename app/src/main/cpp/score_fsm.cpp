@@ -43,6 +43,16 @@ GameSnapshot GameSnapshot::fromIntArray(const int* in) {
     return snap;
 }
 
+// --- Helpers ---
+
+namespace {
+
+// serveSide 编码：[bit1:who(0=self,1=opponent)][bit0:court(0=left,1=right)]
+inline bool serveSideIsSelf(int serveSide) { return ((serveSide >> 1) & 1) == 0; }
+inline bool serveSideIsRight(int serveSide) { return (serveSide & 1) == 1; }
+
+} // anonymous namespace
+
 // --- ScoreFsm ---
 
 ScoreFsm::ScoreFsm() : m_state(FsmState::SETUP) {
@@ -52,18 +62,28 @@ ScoreFsm::ScoreFsm() : m_state(FsmState::SETUP) {
 
 void ScoreFsm::init(int scoreLimit, int totalSets, int initHalf) {
     m_history.clear();
+    // 不清除 m_pointLog — 历史数据跨比赛保留，用户手动清除
     m_state = FsmState::PLAYING;
     m_totalSets = totalSets;
     m_setsToWin = (totalSets + 1) / 2;
     m_initHalf = initHalf;
     int wh = (initHalf < 0) ? 0 : initHalf;  // doubles: initHalf; singles: 0 (unused)
-    m_snapshot = GameSnapshot{0, 0, scoreLimit, 1, 1, 0, 0,
+    int initialServeSide = 1;  // self serves, right court
+    m_snapshot = GameSnapshot{0, 0, scoreLimit, initialServeSide, 1, 0, 0,
                               static_cast<int>(FsmState::PLAYING), 0, 0, 0, 0, 0, wh};
+
+    // Point log: first set
+    m_pointLog.push_back({
+        serveSideIsSelf(initialServeSide),
+        serveSideIsRight(initialServeSide),
+        {}
+    });
 }
 
 void ScoreFsm::reset() {
     int limit = m_snapshot.scoreLimit;
     m_history.clear();
+    m_pointLog.clear();
     m_state = FsmState::SETUP;
     m_initHalf = -1;
     m_snapshot = GameSnapshot{0, 0, limit, 1, 1, 0, 0,
@@ -98,6 +118,11 @@ bool ScoreFsm::scoreLeft() {
     int courtL = (m_snapshot.leftScore % 2 == 0) ? 1 : 0;
     m_snapshot.serveSide = (0 << 1) | courtL;  // self serves, court=0/1
 
+    // Point log
+    if (!m_pointLog.empty()) {
+        m_pointLog.back().points.push_back('1');
+    }
+
     // 局点/赛点检测
     recalculateMeta();
 
@@ -115,6 +140,11 @@ bool ScoreFsm::scoreRight() {
     // 对方得分 → 对方发球 (who=1)
     int courtR = (m_snapshot.rightScore % 2 == 0) ? 1 : 0;
     m_snapshot.serveSide = (1 << 1) | courtR;  // opponent serves, court=0/1
+
+    // Point log
+    if (!m_pointLog.empty()) {
+        m_pointLog.back().points.push_back('0');
+    }
 
     recalculateMeta();
 
@@ -134,6 +164,14 @@ bool ScoreFsm::undo() {
     m_snapshot = m_history.back();
     m_history.pop_back();
 
+    // Point log: remove last point from current set
+    if (!m_pointLog.empty()) {
+        auto& pts = m_pointLog.back().points;
+        if (!pts.empty()) {
+            pts.pop_back();
+        }
+    }
+
     // 恢复正确状态
     if (m_snapshot.fsmState == static_cast<int>(FsmState::SIDE_SWITCH)) {
         m_state = FsmState::SIDE_SWITCH;
@@ -151,8 +189,8 @@ bool ScoreFsm::undo() {
 
 void ScoreFsm::enterEditMode() {
     if (m_state != FsmState::PLAYING) return;
-    // Don't push history here — entering edit mode is not a scoring action.
-    // The actual score change happens when user confirms edit.
+    // Save pre-edit state so confirmEdit can compute the delta
+    m_preEditSnapshot = m_snapshot;
     m_state = FsmState::EDITING;
     m_snapshot.fsmState = static_cast<int>(FsmState::EDITING);
 }
@@ -174,6 +212,62 @@ bool ScoreFsm::setEditScores(int left, int right, int serveSide, int wearerHalf)
 
 void ScoreFsm::confirmEdit() {
     if (m_state != FsmState::EDITING) return;
+
+    GameSnapshot editedSnapshot = m_snapshot;
+    int leftDelta = editedSnapshot.leftScore - m_preEditSnapshot.leftScore;
+    int rightDelta = editedSnapshot.rightScore - m_preEditSnapshot.rightScore;
+
+    // Rewind to pre-edit state
+    m_snapshot = m_preEditSnapshot;
+
+    // 1) Undo individual scoring events for subtracted points.
+    //    Use rfind so we remove the correct side's marker from point log.
+    int undoSteps = std::max(-leftDelta, 0) + std::max(-rightDelta, 0);
+    for (int i = 0; i < undoSteps; ++i) {
+        if (m_history.empty()) break;
+        m_snapshot = m_history.back();
+        m_history.pop_back();
+    }
+
+    // Remove subtracted chars from point log, side-specifically
+    if (!m_pointLog.empty()) {
+        auto& pts = m_pointLog.back().points;
+        int toRemove = std::max(-leftDelta, 0);
+        while (toRemove > 0 && !pts.empty()) {
+            size_t pos = pts.rfind('1');
+            if (pos == std::string::npos) break;
+            pts.erase(pos, 1);
+            --toRemove;
+        }
+        toRemove = std::max(-rightDelta, 0);
+        while (toRemove > 0 && !pts.empty()) {
+            size_t pos = pts.rfind('0');
+            if (pos == std::string::npos) break;
+            pts.erase(pos, 1);
+            --toRemove;
+        }
+    }
+
+    // 2) Simulate added points as individual scoring events
+    for (int i = 0; i < std::max(leftDelta, 0); ++i) {
+        pushHistory();
+        m_snapshot.leftScore++;
+        int courtL = (m_snapshot.leftScore % 2 == 0) ? 1 : 0;
+        m_snapshot.serveSide = (0 << 1) | courtL;
+        if (!m_pointLog.empty()) m_pointLog.back().points.push_back('1');
+    }
+    for (int i = 0; i < std::max(rightDelta, 0); ++i) {
+        pushHistory();
+        m_snapshot.rightScore++;
+        int courtR = (m_snapshot.rightScore % 2 == 0) ? 1 : 0;
+        m_snapshot.serveSide = (1 << 1) | courtR;
+        if (!m_pointLog.empty()) m_pointLog.back().points.push_back('0');
+    }
+
+    // 3) Apply user-overridden serveSide / wearerHalf
+    m_snapshot.serveSide = editedSnapshot.serveSide;
+    m_snapshot.wearerHalf = editedSnapshot.wearerHalf;
+
     m_state = FsmState::PLAYING;
     m_snapshot.fsmState = static_cast<int>(FsmState::PLAYING);
     checkSetEnd();
@@ -207,6 +301,14 @@ void ScoreFsm::confirmSideSwitch() {
         m_snapshot.rightScore = 0;
         m_snapshot.serveSide = 1;  // self serves, right court
         m_snapshot.sideSwitchedThisSet = 0;
+
+        // Point log: new set
+        m_pointLog.push_back({
+            serveSideIsSelf(1),   // self serves
+            serveSideIsRight(1),  // right court
+            {}
+        });
+
         recalculateMeta();
     }
 }
@@ -221,7 +323,7 @@ void ScoreFsm::restoreFromIntArray(const int* in) {
 }
 
 std::string ScoreFsm::serialize() const {
-    // 格式: "scoreLimit,totalSets,historySize,initHalf;..."
+    // 格式: "scoreLimit,totalSets,historySize,initHalf;snapshot:hist1:hist2:...|pointLogSection"
     std::ostringstream oss;
     oss << m_snapshot.scoreLimit << "," << m_totalSets << "," << m_history.size() << "," << m_initHalf << ";";
 
@@ -248,12 +350,32 @@ std::string ScoreFsm::serialize() const {
             << snap.wearerHalf;
     }
 
+    // Point log section
+    if (!m_pointLog.empty()) {
+        oss << "|" << m_pointLog.size() << ";";
+        for (size_t i = 0; i < m_pointLog.size(); ++i) {
+            if (i > 0) oss << ":";
+            oss << (m_pointLog[i].serveSelf ? '1' : '0') << ","
+                << (m_pointLog[i].initialRight ? '1' : '0') << ","
+                << m_pointLog[i].points;
+        }
+    }
+
     return oss.str();
 }
 
 bool ScoreFsm::deserialize(const std::string& data) {
     try {
-        std::istringstream iss(data);
+        // Split off point-log section if present
+        std::string fsmData = data;
+        std::string pointLogData;
+        auto pipePos = data.find('|');
+        if (pipePos != std::string::npos) {
+            fsmData = data.substr(0, pipePos);
+            pointLogData = data.substr(pipePos + 1);
+        }
+
+        std::istringstream iss(fsmData);
         std::string header;
         std::getline(iss, header, ';');
 
@@ -341,6 +463,31 @@ bool ScoreFsm::deserialize(const std::string& data) {
                 0,  // needsSetEndSwitch
                 hWearerVal
             });
+        }
+
+        // Parse point log section: "N;serveSelf,initialRight,points:..."
+        m_pointLog.clear();
+        if (!pointLogData.empty()) {
+            std::istringstream plStream(pointLogData);
+            std::string plHeader;
+            std::getline(plStream, plHeader, ';');
+            size_t setCount = std::stoul(plHeader);
+            m_pointLog.reserve(setCount);
+
+            std::string setItem;
+            while (std::getline(plStream, setItem, ':')) {
+                // Format: "serveSelf,initialRight,points"
+                auto c1 = setItem.find(',');
+                if (c1 == std::string::npos) break;
+                auto c2 = setItem.find(',', c1 + 1);
+                if (c2 == std::string::npos) break;
+
+                SetRecord rec;
+                rec.serveSelf = (setItem[0] == '1');
+                rec.initialRight = (setItem.substr(c1 + 1, 1) == "1");
+                rec.points = setItem.substr(c2 + 1);
+                m_pointLog.push_back(std::move(rec));
+            }
         }
 
         return true;
@@ -443,18 +590,32 @@ bool ScoreFsm::shouldSwitchAfterSet(int currentSet, int totalSets) {
     return (totalSets > 1 && currentSet < totalSets);
 }
 
-std::string ScoreFsm::exportMatchData(const std::string& setsData) {
-    // setsData 格式: "set1_data;set2_data;..."
-    // 每局数据: [首球发球方][初始位置][得分序列]
-    // 需要把 ; 换成 | 返回
-    std::string result = setsData;
-    // 将所有 ; 替换为 |
-    for (size_t i = 0; i < result.size(); ++i) {
-        if (result[i] == ';') {
-            result[i] = '|';
+bool ScoreFsm::hasPointLogData() const {
+    for (const auto& set : m_pointLog) {
+        if (!set.points.empty()) return true;
+    }
+    return false;
+}
+
+void ScoreFsm::clearPointLog() {
+    m_pointLog.clear();
+}
+
+std::string ScoreFsm::exportMatchData() const {
+    if (m_pointLog.empty()) return "EMPTY_DATA";
+
+    std::ostringstream oss;
+    for (size_t i = 0; i < m_pointLog.size(); ++i) {
+        const auto& set = m_pointLog[i];
+        // 格式: [首球发球方][初始位置][得分序列]
+        oss << (set.serveSelf ? '1' : '0')
+            << (set.initialRight ? '1' : '0')
+            << set.points;
+        if (i < m_pointLog.size() - 1) {
+            oss << '|';
         }
     }
-    return result;
+    return oss.str();
 }
 
 } // namespace zerodrop

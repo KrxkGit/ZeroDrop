@@ -1,17 +1,24 @@
 <template>
   <div>
-    <!-- WeChat 浏览器提示 -->
-    <div v-if="isWechat" class="wechat-banner">
+    <!-- Canvas 渲染不可用时提示 -->
+    <div v-if="!canRenderToCanvas" class="wechat-banner">
       <span class="wechat-icon">💡</span>
-      <span class="wechat-text">微信内无法保存截图，请点击右上角 <strong>「在浏览器打开」</strong> 或长按保存</span>
+      <span class="wechat-text">
+        <template v-if="isWechat">
+          微信内无法保存截图，请点击右上角 <strong>「在浏览器打开」</strong> 或长按保存
+        </template>
+        <template v-else>
+          当前浏览器不支持导出截图，请<strong>复制链接</strong>后在系统浏览器中打开
+        </template>
+      </span>
     </div>
 
     <!-- 顶部操作栏 -->
     <div class="action-bar">
       <span class="action-bar-title">赛后复盘</span>
       <div class="action-bar-buttons">
-        <button v-if="isWechat" class="copy-btn" @click="copyLink">复制链接</button>
-        <button v-if="!isWechat" class="save-btn" @click="saveScreenshot">保存截图</button>
+        <button v-if="canRenderToCanvas" class="save-btn" @click="saveScreenshot">保存截图</button>
+        <button class="copy-btn" @click="copyLink">复制链接</button>
       </div>
     </div>
     <div ref="captureRef" class="review-container">
@@ -99,7 +106,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
@@ -118,8 +125,34 @@ const props = defineProps<{
 }>()
 
 const captureRef = ref<HTMLElement | null>(null)
+/** html2canvas 能否产出有效 Canvas——决定是否显示"保存截图"按钮 */
+const canRenderToCanvas = ref(false)
 
-/** 复制完整链接（微信内使用，方便用户在浏览器打开） */
+/** 检测 html2canvas 能否在当前浏览器产出有效 Canvas */
+async function detectCanvasCapability(): Promise<boolean> {
+  try {
+    const testEl = document.createElement('div')
+    testEl.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:10px;height:10px'
+    testEl.textContent = '.'
+    document.body.appendChild(testEl)
+
+    const canvas = await html2canvas(testEl, {
+      scale: 1,
+      logging: false
+    })
+    document.body.removeChild(testEl)
+
+    return canvas instanceof HTMLCanvasElement && canvas.width > 0 && canvas.height > 0
+  } catch {
+    return false
+  }
+}
+
+onMounted(async () => {
+  canRenderToCanvas.value = await detectCanvasCapability()
+})
+
+/** 复制完整链接（浏览器不支持 HTML→Canvas 截图时，方便用户在系统浏览器打开） */
 async function copyLink() {
   const url = `${window.location.origin}${window.location.pathname}?m=${encodeURIComponent(props.data)}`
   try {

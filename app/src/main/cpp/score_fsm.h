@@ -44,6 +44,17 @@ struct GameSnapshot {
     static GameSnapshot fromIntArray(const int* in);
 };
 
+/**
+ * Per-set point log record.
+ * Tracks the complete point-by-point sequence for QR code export.
+ * Each scoreLeft() appends '1', each scoreRight() appends '0'.
+ */
+struct SetRecord {
+    bool serveSelf;       // 首球发球方 true=self
+    bool initialRight;    // 初始位置 true=右区
+    std::string points;   // 得分序列 "1"=己方得分 "0"=对方得分
+};
+
 class ScoreFsm {
 public:
     ScoreFsm();
@@ -77,7 +88,7 @@ public:
     // 从快照恢复
     void restoreFromIntArray(const int* in);
 
-    // 序列化整个历史栈
+    // 序列化整个历史栈（包含 point log）
     std::string serialize() const;
     bool deserialize(const std::string& data);
 
@@ -85,11 +96,13 @@ public:
     size_t historySize() const { return m_history.size(); }
 
     // 导出比赛数据用于二维码生成（多局）
-    // setsData: 多局数据，格式 "set1_data;set2_data;..."
-    //   每局数据：[首球发球方1=己方,0=对方][初始位置1=右区,0=左区][得分序列]
-    //   得分序列：1=己方得分, 0=对方得分
-    // 返回：用 | 分隔的多局数据
-    static std::string exportMatchData(const std::string& setsData);
+    // 格式：用 | 分隔的各局数据，每局：[首球发球方1=己方,0=对方][初始位置1=右区,0=左区][得分序列]
+    std::string exportMatchData() const;
+
+    // ── Point log 查询（Kotlin 侧代替 setsHistory） ──
+    bool hasPointLogData() const;           // 是否有任何得分记录
+    void clearPointLog();                   // 清除所有得分流水
+    size_t pointLogSetCount() const { return m_pointLog.size(); }
 
     // 判断是否需要在局中换边（决胜局中途半场分）
     static bool shouldSwitchSides(int scoreLimit, int left, int right,
@@ -105,6 +118,8 @@ private:
     FsmState m_state;
     GameSnapshot m_snapshot;
     std::vector<GameSnapshot> m_history;
+    std::vector<SetRecord> m_pointLog;  // 完整得分流水（QR 导出 + 持久化）
+    GameSnapshot m_preEditSnapshot;      // enterEditMode 时的快照，用于 confirmEdit 计算 delta
 
     int m_totalSets = 3;      // 1=单局, 3=三局两胜
     int m_setsToWin = 2;      // (m_totalSets + 1) / 2

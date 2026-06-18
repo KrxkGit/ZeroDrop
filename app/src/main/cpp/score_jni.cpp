@@ -128,11 +128,22 @@ Java_com_zerodrop_app_ScoreBridge_nativeGetHistorySize(JNIEnv* env, jobject thiz
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_zerodrop_app_ScoreBridge_nativeExportMatchData(JNIEnv* env, jobject thiz, jstring setsData) {
-    const char* utf = env->GetStringUTFChars(setsData, nullptr);
-    std::string data = zerodrop::ScoreFsm::exportMatchData(std::string(utf));
-    env->ReleaseStringUTFChars(setsData, utf);
+Java_com_zerodrop_app_ScoreBridge_nativeExportMatchData(JNIEnv* env, jobject thiz) {
+    auto* fsm = getFsm(env, thiz);
+    std::string data = fsm->exportMatchData();
     return env->NewStringUTF(data.c_str());
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_zerodrop_app_ScoreBridge_nativeHasPointLogData(JNIEnv* env, jobject thiz) {
+    auto* fsm = getFsm(env, thiz);
+    return fsm->hasPointLogData() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_zerodrop_app_ScoreBridge_nativeClearPointLog(JNIEnv* env, jobject thiz) {
+    auto* fsm = getFsm(env, thiz);
+    fsm->clearPointLog();
 }
 
 } // extern "C"
