@@ -42,10 +42,23 @@ fun SetupScreen(
     var selectedLimit by remember { mutableIntStateOf(21) }
     var selectedMode by remember { mutableIntStateOf(3) }
     var selectedHalf by remember { mutableIntStateOf(-1) }  // -1=not set, 0=left, 1=right
+    var prefsLoaded by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val ambient = LocalAmbientState.current
     val hasHistory = viewModel.hasMatchHistory()
     var showClearConfirm by remember { mutableStateOf(false) }
+
+    // 首次打开时加载用户上一次的赛制偏好
+    LaunchedEffect(Unit) {
+        if (!prefsLoaded) {
+            viewModel.loadSetupPreferences().let { prefs ->
+                selectedLimit = prefs.scoreLimit
+                selectedMode = prefs.totalSets
+                selectedHalf = prefs.initHalf
+            }
+            prefsLoaded = true
+        }
+    }
 
     val textColor = if (ambient.isAmbient) AMBIENT_SCORE else SCORE_WHITE
     val dimColor = if (ambient.isAmbient) AMBIENT_DIM else SCORE_DIM
@@ -176,6 +189,7 @@ fun SetupScreen(
 
             Button(
                 onClick = {
+                    viewModel.saveSetupPreferences(selectedLimit, selectedMode, selectedHalf)
                     onStartMatch(selectedLimit, selectedMode, selectedHalf)
                 },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)

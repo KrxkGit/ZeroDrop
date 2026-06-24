@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.os.PowerManager
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.AndroidViewModel
@@ -40,6 +41,13 @@ data class GameUiState(
     val wearerHalf: Int = -1      // 佩戴者当前半区 0=左,1=右,-1=单打
 )
 
+/** 用户上一次的赛制偏好，持久化到 DataStore */
+data class SetupPreferences(
+    val scoreLimit: Int = 21,
+    val totalSets: Int = 3,
+    val initHalf: Int = -1
+)
+
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val fsm = ScoreBridge()
@@ -64,6 +72,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---- Persistence keys ----
     private val persistKey = stringPreferencesKey("fsm_serialized")
+    private val setupScoreLimitKey = intPreferencesKey("setup_score_limit")
+    private val setupTotalSetsKey = intPreferencesKey("setup_total_sets")
+    private val setupInitHalfKey = intPreferencesKey("setup_init_half")
 
     init {
         loadPersistedState()
@@ -179,6 +190,27 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun getQrCodeUrl(): String {
         val data = exportMatchData()
         return "${BuildConfig.QR_TARGET_URL}?m=$data"
+    }
+
+    /** 持久化用户上一次的赛制配置 */
+    fun saveSetupPreferences(scoreLimit: Int, totalSets: Int, initHalf: Int) {
+        viewModelScope.launch {
+            context.dataStore.edit { prefs ->
+                prefs[setupScoreLimitKey] = scoreLimit
+                prefs[setupTotalSetsKey] = totalSets
+                prefs[setupInitHalfKey] = initHalf
+            }
+        }
+    }
+
+    /** 读取用户上一次保存的赛制偏好，无记录时返回默认值 (21分, 3局2胜, 未选半区) */
+    suspend fun loadSetupPreferences(): SetupPreferences {
+        val prefs = context.dataStore.data.first()
+        return SetupPreferences(
+            scoreLimit = prefs[setupScoreLimitKey] ?: 21,
+            totalSets = prefs[setupTotalSetsKey] ?: 3,
+            initHalf = prefs[setupInitHalfKey] ?: -1
+        )
     }
 
     // ---- Internal ----
